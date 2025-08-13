@@ -6,7 +6,7 @@
 <sub><em>Gather acorns today 🌰<br>Grow a forest tomorrow 🌳</em></sub>
 
 <img alt="status" src="https://img.shields.io/badge/status-Build%20in%20Public-orange" />
-<img alt="license" src="https://img.shields.io/badge/license-Unlicensed-red" />
+<img alt="license" src="https://img.shields.io/badge/license-No License-red" />
 <img alt="security" src="https://img.shields.io/badge/audit-Not%20Started-red" />
 
 </div>
