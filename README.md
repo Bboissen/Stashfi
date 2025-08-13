@@ -1,54 +1,73 @@
 <div align="center">
 
-## 🐿️ Stashfi
-**On‑chain smart trading & automated strategies for everyone.**
+<h1>🐿️ Stashfi</h1>
+<p><strong>On-chain smart trading & automated strategies for everyone.</strong></p>
 
-Bring CEX‑grade portfolio & risk tools (especially real stops) to the transparency and self‑custody of DeFi.
+<sub><em>Gather acorns today 🌰<br>Grow a forest tomorrow 🌳</em></sub>
+
+<img alt="status" src="https://img.shields.io/badge/status-Build%20in%20Public-orange" />
+<img alt="license" src="https://img.shields.io/badge/license-Unlicensed-red" />
+<img alt="security" src="https://img.shields.io/badge/audit-Not%20Started-red" />
 
 </div>
 
-### TL;DR
-Stashfi is an on‑chain spot trading & strategy layer: limit / stop / stop‑limit / DCA / value‑averaging + a performance‑aligned marketplace where quantitative strategists ("quants") publish automated strategies users can adopt without surrendering custody.
+---
 
-### Why It Matters
-Centralized exchanges add counterparty risk; most DEXs lack advanced order & risk controls. Stashfi closes that gap while creating a fair incentive model (fees tied to strategy performance, not mere AUM or churn).
+## 🔎 Overview (TL;DR)
+Stashfi is an on-chain spot trading & strategy layer: limit / stop / stop-limit + DCA & value-averaging schedulers.
 
-### Core Features (Initial Scope)
-- Advanced Spot Orders: limit, stop, stop‑limit, trailing
-- Automated Accumulation: DCA & value averaging schedulers
-- Strategy Marketplace: publish, subscribe, monitor – all via transparent smart contracts
-- Performance‑Aligned Fees: quants earn when users profit (e.g. high‑watermark or realized PnL based)
-- Portfolio Safeguards: global and per‑position risk caps (roadmap)
-- Education Layer: contextual tips & light explainer modals (kept decluttered)
+Once the core smart contracts are deployed, it expands into a performance-aligned marketplace where quants publish auditable strategies users can follow while funds remain in their own wallets or vaults.
 
-### Security & Trust Principles
-- Self‑custody first: contracts minimize privileged control.
-- Transparent execution: verifiable triggers & fill proofs.
-- Economically aligned keepers & strategists.
-- Progressive decentralization of orchestration layer.
+## 💡 Why It Should Exists
+Centralized exchanges = counterparty & rehypothecation risk.<br>
+Typical DEX UX = Uniswap V3 with no innovation.<br>
+Stashfi bridges the gap: advanced controls + transparent, performance‑based incentives
 
-### Roadmap (Indicative)
-- [ ] MVP: limit / stop / stop‑limit, DCA, value averaging - Q1 2026
-- [ ] Strategy publishing & subscription flows
-- [ ] Performance fee module (high‑watermark variant)
-- [ ] Risk dashboard & global stop
-- [ ] Trailing stops & conditional OCO bundles
-- [ ] Cross‑venue routing / best execution
+## 🚀 Core Feature Set
+| Domain | Features |
+|--------|----------|
+| Orders | Limit • Stop • Stop‑Limit • Trailing |
+| Automation | DCA scheduler • Value averaging planner |
+| Strategies | Publish / subscribe marketplace • On‑chain performance tracking |
+| Fees | Performance‑aligned (e.g. high‑watermark / realized PnL based) |
+| Risk | Global + per‑position safeguards (roadmap) |
+| Education | Contextual inline tips • Lightweight explainer modals |
 
-### Contributing
-Community contributions (code, strategy modules, audits, educational content) are welcome. 
-Contribution guidelines & technical docs coming soon.
+## 🛡️ Security & Trust Principles
+1. Self‑custody first — minimize privileged roles.
+2. Verifiable execution — triggers & fills are provable.
+3. Economic alignment — bonded keepers & performance‑paid strategists.
+4. Progressive decentralization — orchestration migrates on‑chain / DAO‑governed over time.
 
-### License
-Source viewable but No license to modify / copy / distribute until audits are done
+## 🗺️ Indicative Roadmap
+Status | Item | Notes
+-------|------|------
+[ ] | MVP order suite (limit / stop / stop‑limit / trailing) | Target: Q1 2026
+[ ] | DCA & value averaging | Batch scheduler & slippage guardrails
+[ ] | Strategy publishing & subscription | Public registry + opt‑in permissions
+[ ] | Performance fee module | High‑watermark + fallback safeguards
+[ ] | Risk dashboard & global stop | Unified exposure panel
+[ ] | Trailing stops & OCO | Conditional bundles
+[ ] | Cross‑venue routing / best execution | Aggregated liquidity paths
 
-### Get Involved
-- Ideas / Strategy proposals: Open an Issue
-- Security review interest: Start a discussion
-- Brand & UX feedback: Share wireframes / suggestions
+> Roadmap is directional, subject to audit outcomes & community input.
+
+## 🤝 Contributing
+We welcome: strategy modules, execution keepers, audits, educational content, UX refinements. Formal contribution guidelines arriving soon.
+
+Early contributions: open an Issue describing scope & design intent before submitting a PR.
+
+## 📜 License
+Source-available preview.<br>
+All rights reserved until audits complete and an approved license is published.
+
+## 🌱 Get Involved
+- Strategy ideas → Issues
+- Security reviewers / auditors → Discussions
+- Brand & UX input → Share wireframes / figma links
+- Follow progress → Watch / Star repo
 
 ---
-Built to help you gather acorns today and grow forests tomorrow. 🌱
 
 
 
