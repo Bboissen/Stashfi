@@ -18,7 +18,7 @@ Stashfi is an on-chain spot trading & strategy layer: limit / stop / stop-limit 
 
 Once the core smart contracts are deployed, it expands into a performance-aligned marketplace where quants publish auditable strategies users can follow while funds remain in their own wallets or vaults.
 
-## 💡 Why It Should Exists
+## 💡 Why It Should Exist
 Centralized exchanges = counterparty & rehypothecation risk.<br>
 Typical DEX UX = Uniswap V3 with no innovation.<br>
 Stashfi bridges the gap: advanced controls + transparent, performance‑based incentives
