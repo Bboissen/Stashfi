@@ -137,3 +137,78 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs and editors
+.idea/
+.fleet/
+*.iml
+.vscode/
+.history/
+*.swp
+*.swo
+*~
+
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries, build outputs, and profiles
+*.test
+*.out
+*.prof
+*.cov
+*.coverprofile
+coverage.out
+coverage.html
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Vendor directory (if using vendor mode)
+vendor/
+
+# Common Go build output dirs
+bin/
+cmd/**/bin/
+services/*/api-gateway
+services/*/*.exe
+
+# Rust
+target/
+**/target/
+
+# Kubernetes / Helm
+# Packaged charts and dependency charts
+infra/helm/**/charts/
+infra/helm/**/Chart.lock
+*.tgz
+.cr-release-packages/
+# Helm values overrides (local development)
+**/values.local.yaml
+**/values.dev.yaml
+
+# Env/direnv
+.envrc
+
+# JS/TS monorepo extras
+.turbo/
+.pnpm-store/
+
+# Docker artifacts (optional)
+*.tar
+
+# AI
+.cursor/
+.claude/
+claude.md
+*guide.md
