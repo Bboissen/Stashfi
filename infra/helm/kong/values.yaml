@@ -1,0 +1,162 @@
+# Kong configuration for Stashfi - Local Development
+# Using DB-less mode initially for simplicity
+
+# Kong image configuration
+image:
+  repository: kong
+  tag: "3.9"
+  pullPolicy: IfNotPresent
+
+# Environment configuration
+env:
+  database: "off"  # DB-less mode
+  nginx_worker_processes: "2"
+  proxy_access_log: /dev/stdout
+  admin_access_log: /dev/stdout
+  admin_gui_access_log: /dev/stdout
+  portal_api_access_log: /dev/stdout
+  proxy_error_log: /dev/stderr
+  admin_error_log: /dev/stderr
+  admin_gui_error_log: /dev/stderr
+  portal_api_error_log: /dev/stderr
+  prefix: /kong_prefix/
+  log_level: debug
+
+# Admin API configuration
+admin:
+  enabled: true
+  type: NodePort
+  http:
+    enabled: true
+    servicePort: 8001
+    containerPort: 8001
+    nodePort: 32001
+  tls:
+    enabled: false
+
+# Proxy configuration
+proxy:
+  enabled: true
+  type: NodePort
+  http:
+    enabled: true
+    servicePort: 80
+    containerPort: 8000
+    nodePort: 32080
+  tls:
+    enabled: true
+    servicePort: 443
+    containerPort: 8443
+    nodePort: 32443
+
+# Status endpoint
+status:
+  enabled: true
+  http:
+    enabled: true
+    containerPort: 8100
+
+# DB-less configuration
+dblessConfig:
+  config: |
+    _format_version: "3.0"
+    _transform: true
+    
+    services:
+    - name: health-check
+      url: http://api-gateway-service:8080
+      routes:
+      - name: health-route
+        paths:
+        - /health
+        strip_path: false
+      - name: readiness-route
+        paths:
+        - /ready
+        strip_path: false
+    
+    - name: api-v1
+      url: http://api-gateway-service:8080
+      routes:
+      - name: api-v1-route
+        paths:
+        - /api/v1
+        strip_path: false
+
+# Enterprise features (disabled for OSS)
+enterprise:
+  enabled: false
+
+# Manager (Kong Manager UI) - not available in OSS
+manager:
+  enabled: false
+
+# Portal (Developer Portal) - not available in OSS
+portal:
+  enabled: false
+
+# Ingress Controller
+ingressController:
+  enabled: false  # Using Kong in traditional mode, not as ingress controller
+
+# PostgreSQL (disabled for DB-less mode)
+postgresql:
+  enabled: false
+
+# Resource configuration
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Autoscaling
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+# Pod configuration
+replicaCount: 1
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8100"
+  prometheus.io/path: "/metrics"
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Health checks (reduced for local development)
+livenessProbe:
+  httpGet:
+    path: /status
+    port: status
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 2
+
+readinessProbe:
+  httpGet:
+    path: /status/ready
+    port: status
+  initialDelaySeconds: 3
+  periodSeconds: 3
+  timeoutSeconds: 2
+  failureThreshold: 2
+
+# Service Monitor for Prometheus (if installed)
+serviceMonitor:
+  enabled: false
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
