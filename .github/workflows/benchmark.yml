@@ -1,0 +1,431 @@
+name: Performance Benchmarking
+
+on:
+  push:
+    branches: [ main, "feat/**", "perf/**", "refactor/**" ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+  schedule:
+    - cron: '0 3 * * SUN'  # Weekly on Sunday at 3 AM UTC
+  workflow_dispatch:
+    inputs:
+      comparison-branch:
+        description: 'Branch to compare against'
+        required: false
+        default: 'main'
+      benchmark-time:
+        description: 'Benchmark duration per test'
+        required: false
+        default: '10s'
+
+permissions:
+  contents: write
+  pull-requests: write
+  deployments: write
+
+jobs:
+  go-benchmarks:
+    name: Go Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Cache benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-benchmark-
+
+      - name: Run benchmarks
+        run: |
+          cd services/api-gateway
+          
+          # Run benchmarks multiple times for stability
+          BENCH_TIME="${{ github.event.inputs.benchmark-time || '10s' }}"
+          go test -bench=. -benchmem -benchtime=${BENCH_TIME} -count=5 -cpu=1,2,4 ./... | tee ../../benchmark-new.txt
+          
+          # Generate CPU profile
+          go test -bench=. -benchmem -benchtime=${BENCH_TIME} -cpuprofile=cpu.prof ./...
+          
+          # Generate memory profile
+          go test -bench=. -benchmem -benchtime=${BENCH_TIME} -memprofile=mem.prof ./...
+
+      - name: Compare with base branch
+        if: github.event_name == 'pull_request'
+        run: |
+          # Checkout base branch
+          git checkout ${{ github.base_ref }}
+          cd services/api-gateway
+          
+          # Run benchmarks on base branch
+          go test -bench=. -benchmem -benchtime=10s -count=5 -cpu=1,2,4 ./... | tee ../../benchmark-base.txt
+          
+          # Return to PR branch
+          git checkout -
+          
+          # Install benchstat
+          go install golang.org/x/perf/cmd/benchstat@v0.0.0-20241209183054-78c509e22a6c
+          
+          # Compare results
+          benchstat ../../benchmark-base.txt ../../benchmark-new.txt | tee ../../benchmark-comparison.txt
+          
+          # Check for regression
+          if grep -q "slower" ../../benchmark-comparison.txt; then
+            echo "performance_regression=true" >> $GITHUB_ENV
+          else
+            echo "performance_regression=false" >> $GITHUB_ENV
+          fi
+
+      - name: Store benchmark result
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'go'
+          output-file-path: benchmark-new.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: false
+          benchmark-data-dir-path: 'benchmarks'
+
+      - name: Compress profiles
+        run: |
+          tar -czf performance-profiles.tar.gz \
+            services/api-gateway/*.prof \
+            benchmark-*.txt 2>/dev/null || true
+      
+      - name: Upload profiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-profiles
+          path: performance-profiles.tar.gz
+          retention-days: 30
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comparison = fs.readFileSync('benchmark-comparison.txt', 'utf8');
+            const hasRegression = process.env.performance_regression === 'true';
+            
+            const comment = `## 🚀 Performance Benchmark Results
+            
+            ${hasRegression ? '⚠️ **Performance regression detected!**' : '✅ **No performance regression detected**'}
+            
+            <details>
+            <summary>Benchmark Comparison</summary>
+            
+            \`\`\`
+            ${comparison}
+            \`\`\`
+            
+            </details>
+            
+            ### Legend
+            - **name**: Benchmark name
+            - **time/op**: Time per operation (lower is better)
+            - **alloc/op**: Memory allocated per operation (lower is better)
+            - **allocs/op**: Number of allocations per operation (lower is better)
+            
+            ---
+            *Benchmarks run with ${process.env.BENCH_TIME || '10s'} duration on ${new Date().toISOString()}*
+            `;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+  load-testing:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'performance')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/api-gateway
+          push: false
+          load: true
+          tags: stashfi/api-gateway:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start API Gateway container
+        run: |
+          docker run -d --name api-gateway \
+            -p 8080:8080 \
+            -e ENV=benchmark \
+            --health-cmd "curl -f http://localhost:8080/health || exit 1" \
+            --health-interval 10s \
+            --health-timeout 5s \
+            --health-retries 5 \
+            stashfi/api-gateway:test
+          
+          # Wait for container to be healthy
+          timeout 60 bash -c 'until docker inspect api-gateway --format="{{.State.Health.Status}}" | grep -q "healthy"; do sleep 2; done'
+          echo "API Gateway is healthy"
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run load test
+        run: |
+          cat > loadtest.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate, Trend } from 'k6/metrics';
+          
+          const errorRate = new Rate('errors');
+          const apiLatency = new Trend('api_latency');
+          
+          export let options = {
+            stages: [
+              { duration: '1m', target: 50 },   // Ramp up to 50 users
+              { duration: '3m', target: 50 },   // Stay at 50 users
+              { duration: '1m', target: 100 },  // Ramp up to 100 users
+              { duration: '3m', target: 100 },  // Stay at 100 users
+              { duration: '1m', target: 0 },    // Ramp down to 0 users
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<500', 'p(99)<1000'],
+              http_req_failed: ['rate<0.05'],
+              errors: ['rate<0.05'],
+            },
+          };
+          
+          export default function () {
+            const responses = http.batch([
+              ['GET', 'http://localhost:8080/health'],
+              ['GET', 'http://localhost:8080/ready'],
+              ['GET', 'http://localhost:8080/api/v1/status'],
+            ]);
+            
+            responses.forEach((resp) => {
+              const success = check(resp, {
+                'status is 200': (r) => r.status === 200,
+                'response time < 500ms': (r) => r.timings.duration < 500,
+              });
+              
+              errorRate.add(!success);
+              apiLatency.add(resp.timings.duration);
+            });
+            
+            sleep(1);
+          }
+          
+          export function handleSummary(data) {
+            return {
+              'loadtest-summary.json': JSON.stringify(data),
+              'loadtest-summary.txt': textSummary(data, { indent: ' ', enableColors: false }),
+            };
+          }
+          EOF
+          
+          k6 run --out json=loadtest-results.json loadtest.js
+
+      - name: Analyze results
+        run: |
+          # Parse k6 results
+          cat loadtest-results.json | jq -s '
+            . | 
+            {
+              total_requests: length,
+              avg_duration: (map(select(.type=="Point" and .metric=="http_req_duration").data.value) | add / length),
+              error_rate: (map(select(.type=="Point" and .metric=="http_req_failed" and .data.value==true)) | length) / length * 100,
+              percentiles: {
+                p95: (map(select(.type=="Point" and .metric=="http_req_duration").data.value) | sort | .[length * 0.95 | floor]),
+                p99: (map(select(.type=="Point" and .metric=="http_req_duration").data.value) | sort | .[length * 0.99 | floor])
+              }
+            }
+          ' > analysis.json
+          
+          echo "## Load Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          cat analysis.json >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Compress load test results
+        run: tar -czf loadtest-results.tar.gz loadtest-*.json loadtest-*.txt analysis.json
+      
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-results
+          path: loadtest-results.tar.gz
+          retention-days: 30
+
+  memory-profiling:
+    name: Memory Profiling
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Run memory profiling
+        run: |
+          cd services/api-gateway
+          
+          # Run with memory profiling
+          go test -run=^$ -bench=. -benchtime=30s -memprofile=mem.prof -memprofilerate=1 ./...
+          
+          # Analyze memory profile
+          go tool pprof -text mem.prof > mem-profile.txt
+          go tool pprof -svg mem.prof > mem-profile.svg
+          
+          # Check for memory leaks
+          go test -run=TestMemoryLeak -timeout=60s ./...
+
+      - name: Run pprof server
+        run: |
+          cd services/api-gateway
+          echo "Starting pprof server..."
+          go tool pprof -http=:6060 mem.prof &
+          sleep 5
+          
+          # Capture screenshots of pprof web interface
+          # This would require a headless browser setup
+          echo "pprof server running at http://localhost:6060"
+
+      - name: Compress profiling results
+        run: |
+          cd services/api-gateway
+          tar -czf ../../memory-profiles.tar.gz \
+            mem.prof mem-profile.txt mem-profile.svg 2>/dev/null || true
+      
+      - name: Upload profiling results
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-profiles
+          path: memory-profiles.tar.gz
+          retention-days: 30
+
+  performance-report:
+    name: Generate Performance Report
+    runs-on: ubuntu-latest
+    needs: [go-benchmarks, load-testing, memory-profiling]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: performance-artifacts/
+
+      - name: Generate comprehensive report
+        run: |
+          cat > performance-report.md << 'EOF'
+          # Performance Report
+          
+          ## Date
+          $(date)
+          
+          ## Summary
+          
+          ### Go Benchmarks
+          - Status: ${{ needs.go-benchmarks.result }}
+          - Regression Detected: ${PERFORMANCE_REGRESSION:-false}
+          
+          ### Load Testing
+          - Status: ${{ needs.load-testing.result }}
+          - Max Users: 100
+          - Duration: 9 minutes
+          
+          ### Memory Profiling
+          - Status: ${{ needs.memory-profiling.result }}
+          - Profiling Duration: 30s
+          
+          ## Recommendations
+          
+          1. **If regression detected:**
+             - Review recent code changes
+             - Check for algorithmic complexity increases
+             - Profile specific functions showing regression
+          
+          2. **For load testing failures:**
+             - Check resource limits
+             - Review connection pooling
+             - Analyze error logs
+          
+          3. **For memory issues:**
+             - Check for memory leaks
+             - Review object allocation patterns
+             - Consider memory pooling
+          
+          ## Historical Trends
+          
+          View historical benchmark data at: https://github.com/${{ github.repository }}/blob/gh-pages/benchmarks/index.html
+          
+          ---
+          *This report was automatically generated by the Performance Benchmarking workflow*
+          EOF
+          
+          cat performance-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Create issue for performance regression
+        if: env.performance_regression == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '⚠️ Performance Regression Detected',
+              body: `A performance regression was detected in the latest benchmarks.
+              
+              **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+              
+              Please review the benchmark results and address any performance issues.
+              
+              cc @${context.repo.owner}`,
+              labels: ['performance', 'regression', 'automated']
+            });
+            
+            console.log(`Created issue #${issue.data.number}`);

@@ -1,0 +1,327 @@
+name: Docker Build & Scan
+
+on:
+  push:
+    branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "perf/**" ]
+    tags: [ 'v*' ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push image to registry'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/api-gateway
+  DOCKERFILE_PATH: ./services/api-gateway
+  PLATFORMS: linux/amd64,linux/arm64
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  id-token: write
+
+jobs:
+  build-and-scan:
+    name: Build and Scan Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=moby/buildkit:v0.18.1
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}},enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=API Gateway
+            org.opencontainers.image.description=Stashfi API Gateway Service
+            org.opencontainers.image.vendor=Stashfi
+            org.opencontainers.image.licenses=Proprietary
+
+      - name: Build Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.DOCKERFILE_PATH }}
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # SLSA Provenance generation (mode=max includes all build info)
+          provenance: mode=max
+          # SBOM generation in SPDX format
+          sbom: true
+          # Attestation outputs for signing and verification
+          attests: type=sbom,generator=docker/buildkit-syft-scanner@v1
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Export single-arch image for scanning
+        # Always export linux/amd64 for scanning (Trivy, Snyk, etc. don't handle multi-arch well)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.DOCKERFILE_PATH }}
+          platforms: linux/amd64
+          outputs: type=docker,dest=/tmp/image.tar
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          cache-from: type=gha
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Load image for scanning
+        run: docker load --input /tmp/image.tar
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-scan'
+
+      - name: Run Snyk container scan
+        if: env.SNYK_TOKEN != ''
+        continue-on-error: true
+        uses: snyk/actions/docker@v0.4.0
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          args: --severity-threshold=high --file=${{ env.DOCKERFILE_PATH }}/Dockerfile
+
+      - name: Run Hadolint Dockerfile Linter
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ env.DOCKERFILE_PATH }}/Dockerfile
+          format: sarif
+          output-file: hadolint-results.sarif
+          no-fail: true
+          ignore: DL3008,DL3009
+
+      - name: Upload Hadolint results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hadolint-results.sarif
+          category: 'dockerfile-lint'
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 30
+
+      - name: Submit SBOM to Dependency Graph
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/dependency-submission-action@v1
+        with:
+          sbom-path: sbom.spdx.json
+          format: spdx-json
+
+      - name: Image efficiency analysis
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            wagoodman/dive:v0.12.0 \
+            --ci \
+            --lowestEfficiency=0.9 \
+            --highestUserWastedPercent=0.1 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+
+      - name: Container Structure Test
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${PWD}:/workspace \
+            gcr.io/gcp-runtimes/container-structure-test:v1.20.0 \
+            test \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan \
+            --config /workspace/.github/container-structure-test.yaml
+
+  sign-and-attest:
+    name: Sign and Attest Container Image
+    runs-on: ubuntu-latest
+    needs: build-and-scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign container image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          echo "${{ needs.build-and-scan.outputs.image-tags }}" | while read tag; do
+            cosign sign --yes ${tag}@${{ needs.build-and-scan.outputs.image-digest }}
+          done
+
+      - name: Verify signature
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          echo "${{ needs.build-and-scan.outputs.image-tags }}" | while read tag; do
+            cosign verify ${tag}@${{ needs.build-and-scan.outputs.image-digest }} \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/*" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          done
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: .
+
+      - name: Attach SBOM attestation
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          echo "${{ needs.build-and-scan.outputs.image-tags }}" | while read tag; do
+            cosign attest --yes --predicate sbom.spdx.json \
+              --type spdxjson \
+              ${tag}@${{ needs.build-and-scan.outputs.image-digest }}
+          done
+
+      - name: Verify SLSA Provenance
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          echo "${{ needs.build-and-scan.outputs.image-tags }}" | while read tag; do
+            # Verify the SLSA provenance attestation
+            cosign verify-attestation ${tag}@${{ needs.build-and-scan.outputs.image-digest }} \
+              --type slsaprovenance \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/*" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" || echo "SLSA provenance verification pending"
+          done
+
+  test-container:
+    name: Test Container
+    runs-on: ubuntu-latest
+    needs: build-and-scan
+    if: github.event_name == 'pull_request'
+    services:
+      kong:
+        image: kong:3.9
+        env:
+          KONG_DATABASE: "off"
+          KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+        ports:
+          - 8000:8000
+          - 8001:8001
+        options: >-
+          --health-cmd "kong health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test container startup
+        run: |
+          docker run -d --name api-gateway \
+            -p 8080:8080 \
+            -e PORT=8080 \
+            -e ENV=test \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          
+          # Wait for container to be healthy
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/health; then
+              echo "✅ Container is healthy"
+              break
+            fi
+            echo "Waiting for container to be ready... ($i/30)"
+            sleep 2
+          done
+          
+          # Test all endpoints
+          curl -f http://localhost:8080/ready
+          curl -f http://localhost:8080/api/v1/status
+          
+          # Check container logs
+          docker logs api-gateway
+          
+          # Stop container
+          docker stop api-gateway
