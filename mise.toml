@@ -1,44 +1,23 @@
-# Project-level configuration for the mise version manager
+# Root-level mise configuration for the Stashfi monorepo
 
-# The `[tools]` section declares the versions of languages and tools required
-# for this project. Explicit versions are preferred over the `latest` or `lts`
-# tags so that all developers on the team are running the same binaries. If
-# you update a version here, make sure to run `mise install` to download it.
+## Settings
+##
+# Enable the lockfile so that mise generates and uses a `mise.lock` file.
+[settings]
+lockfile = true
 
+## Tools
+##
+# Shared tool versions used across all services in the repository.  This ensures
+# every contributor and CI job uses the same Node, Python, Go and tooling versions.
 [tools]
-node = "18.18.0"        # Long‑Term Support (LTS) release for Node.js at the time of writing
-python = "3.11"         # Modern Python release with long‑term security support
+node    = "22.18.0"  # LTS release for Node.js
+go      = "1.23.4"   # Latest stable Go version
+uv      = "0.8.12"   # Universal virtualenv manager
+helm    = "3.16.3"   # Kubernetes package manager
+kubectl = "1.31.3"   # Kubernetes CLI
+minikube = "1.34.0"  # Local Kubernetes cluster runtime
 
-# You can add additional tools here as your stack evolves. For example:
-# terraform = "1.7"     # Infrastructure as code
-# helm = "3.13"         # Kubernetes package manager
-
-
-## Optional: environment variables
 ##
-## The `[env]` section can be used to set project‑wide environment variables
-## when `mise activate` is run. For example, you may want to define
-## variables needed by the API gateway or Kubernetes manifests. These are
-## commented out for now—uncomment and adjust as needed.
-#[env]
-#KONG_DATABASE = "off"           # Use DB‑less Kong deployments by default
-#KONG_LOG_LEVEL = "info"        # Reduce noise in local development
-
-
-## Optional: tasks
-##
-## The `[tasks.*]` sections let you define repeatable commands that can be run
-## via `mise run <task>`. This project defines a task to bootstrap a
-## Kubernetes cluster with the Kong Ingress Controller. It installs the
-## Gateway API CRDs, creates a `kong` namespace, and installs Kong via Helm.
-## These commands are safe to run repeatedly; resources that already exist
-## will be left unchanged.
-#[tasks.install_kong]
-#description = "Install the Kong Ingress Controller and its dependencies"
-#run = """
-#helm repo add kong https://charts.konghq.com
-#helm repo update
-#kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml
-#kubectl create namespace kong --dry-run=client -o yaml | kubectl apply -f -
-#helm install kong kong/ingress -n kong --create-namespace
-#"""
+# This root file intentionally contains only shared configuration.  Service‑specific
+# tasks and overrides live in their respective `services/<name>/mise.toml` files.
