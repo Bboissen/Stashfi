@@ -6,20 +6,26 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "🚀 Starting Stashfi local deployment..."
 
-if ! command -v minikube &> /dev/null; then
-    echo "❌ minikube is not installed. Please install it first."
-    exit 1
+# Check if mise is installed
+if ! command -v mise &> /dev/null; then
+    echo "📦 Installing mise..."
+    curl -fsSL https://mise.run | sh
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
-if ! command -v kubectl &> /dev/null; then
-    echo "❌ kubectl is not installed. Please install it first."
-    exit 1
-fi
+# Install required tools via mise
+cd "$PROJECT_ROOT"
+echo "📦 Installing tools from mise.toml..."
 
-if ! command -v helm &> /dev/null; then
-    echo "❌ helm is not installed. Please install it first."
-    exit 1
-fi
+# Install tools from mise.toml
+mise install
+
+# Activate mise environment
+eval "$(mise activate bash)"
+
+# Verify tools are available
+echo "✅ Tool versions:"
+mise list | grep -E "go|helm|kubectl|minikube" || true
 
 echo "📦 Checking minikube status..."
 if ! minikube status &> /dev/null; then
@@ -29,7 +35,7 @@ else
     echo "✅ minikube is already running"
 fi
 
-eval $(minikube docker-env)
+eval "$(minikube docker-env)"
 
 echo "🏗️ Building API Gateway Docker image..."
 docker build -t stashfi/api-gateway:latest "$PROJECT_ROOT/services/api-gateway"
@@ -57,8 +63,13 @@ kubectl wait --for=condition=ready pod -l app=api-gateway -n stashfi --timeout=6
 echo "📊 Deployment status:"
 kubectl get pods -n stashfi
 
-echo "🌐 Kong Admin API: http://$(minikube ip):32001"
+echo ""
+echo "📌 Access endpoints:"
 echo "🌐 Kong Proxy: http://$(minikube ip):32080"
 echo "🌐 Kong Proxy (HTTPS): https://$(minikube ip):32443"
+echo ""
+echo "🔒 Kong Admin API (ClusterIP - use port-forward for access):"
+echo "   kubectl port-forward -n stashfi service/kong-kong-admin 8001:8001"
+echo "   Then access at: http://localhost:8001"
 
 echo "✅ Local deployment complete!"
