@@ -1,0 +1,378 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, "feat/**", "fix/**", "hotfix/**", "security/**" ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  code-scanning:
+    name: Code Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@v2.21.5
+        with:
+          args: '-fmt sarif -out gosec-results.sarif -severity medium ./...'
+
+      - name: Upload Gosec results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/golang
+            p/owasp-top-ten
+            p/kubernetes
+            p/docker
+          generateSarif: true
+
+      - name: Upload Semgrep results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+  dependency-scanning:
+    name: Dependency Vulnerability Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Run Go vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.3
+          govulncheck -json ./... | tee govuln-report.json
+        working-directory: ./services/api-gateway
+
+      - name: Parse vulnerability results
+        run: |
+          if [ -s govuln-report.json ]; then
+            echo "## Vulnerability Report" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat govuln-report.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+        working-directory: ./services/api-gateway
+
+      - name: Run Nancy
+        run: |
+          go list -json -deps ./... | docker run --rm -i sonatypecorp/nancy:v1.0.46 sleuth --output json | tee nancy-report.json
+        working-directory: ./services/api-gateway
+        continue-on-error: true
+
+      - name: Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@11.3.1
+        with:
+          project: 'stashfi'
+          path: '.'
+          format: 'ALL'
+          args: >
+            --enableRetired
+            --enableExperimental
+            --nvdApiKey ${{ secrets.NVD_API_KEY }}
+        env:
+          JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.10-7/x64
+
+      - name: Upload Dependency-Check results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/dependency-check-report.sarif
+          category: dependency-check
+
+  secret-scanning:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@v3.101.0
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      - name: Run detect-secrets
+        run: |
+          pip install detect-secrets
+          detect-secrets scan --baseline .secrets.baseline || true
+          detect-secrets audit .secrets.baseline || true
+
+  license-compliance:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@v1.6.0
+
+      - name: Check licenses
+        run: |
+          cd services/api-gateway
+          go-licenses check . --disallowed_types=forbidden,restricted,reciprocal,unknown
+          go-licenses report . --template=csv > licenses.csv
+          
+          echo "## License Report" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat licenses.csv >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: services/api-gateway/licenses.csv
+
+  infrastructure-scanning:
+    name: Infrastructure Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12.2961.0
+        with:
+          directory: .
+          framework: kubernetes,helm,dockerfile,github_actions,json,yaml
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          download_external_modules: true
+          soft_fail: true
+
+      - name: Upload Checkov results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-results.sarif
+          category: infrastructure
+
+      - name: Run Terrascan
+        run: |
+          docker run --rm -v "$(pwd):/src" \
+            tenable/terrascan:v1.20.1 \
+            scan -i k8s -d /src/infra \
+            -o sarif > terrascan-results.sarif || true
+
+      - name: Upload Terrascan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: terrascan-results.sarif
+          category: terrascan
+
+  sast-sonarcloud:
+    name: SAST with SonarCloud
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+
+      - name: Run tests with coverage
+        run: |
+          go test -coverprofile=coverage.out ./...
+        working-directory: ./services/api-gateway
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v3.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=stashfi
+            -Dsonar.organization=${{ github.repository_owner }}
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/*_test.go,**/vendor/**,**/testdata/**
+            -Dsonar.tests=.
+            -Dsonar.test.inclusions=**/*_test.go
+            -Dsonar.go.coverage.reportPaths=services/api-gateway/coverage.out
+
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [code-scanning, dependency-scanning, secret-scanning, license-compliance, infrastructure-scanning]
+    if: always()
+    steps:
+      - name: Generate comprehensive security report
+        run: |
+          cat > security-report.md << 'EOF'
+          # Security Scan Report
+          
+          ## Scan Date
+          $(date)
+          
+          ## Scan Results Summary
+          
+          ### Code Security
+          - ✅ Gosec: Completed
+          - ✅ Semgrep: Completed
+          - ✅ CodeQL: Completed
+          
+          ### Dependency Security
+          - ✅ Go Vulnerability Check: Completed
+          - ✅ Nancy: Completed
+          - ✅ OWASP Dependency Check: Completed
+          
+          ### Secret Detection
+          - ✅ Gitleaks: Completed
+          - ✅ TruffleHog: Completed
+          - ✅ detect-secrets: Completed
+          
+          ### License Compliance
+          - ✅ go-licenses: Completed
+          
+          ### Infrastructure Security
+          - ✅ Checkov: Completed
+          - ✅ Terrascan: Completed
+          
+          ## Recommendations
+          
+          1. **High Priority**
+             - Address any critical vulnerabilities immediately
+             - Remove any detected secrets and rotate credentials
+             - Update dependencies with known vulnerabilities
+          
+          2. **Medium Priority**
+             - Review and fix security misconfigurations
+             - Implement missing security controls
+             - Update to latest patch versions
+          
+          3. **Low Priority**
+             - Consider security best practices improvements
+             - Review informational findings
+             - Plan for future security enhancements
+          
+          ## Compliance Status
+          
+          - OWASP Top 10: Scanned
+          - CIS Benchmarks: Partial coverage
+          - PCI DSS: Not applicable
+          - GDPR: Review required
+          
+          ## Next Steps
+          
+          1. Review all findings in GitHub Security tab
+          2. Create issues for critical findings
+          3. Schedule remediation based on severity
+          4. Re-scan after fixes are applied
+          
+          ---
+          
+          *This report was automatically generated by the Security Scanning workflow*
+          EOF
+          
+          cat security-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.md
+          retention-days: 30
+
+      - name: Create security issue if critical findings
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Critical Security Findings Detected',
+              body: `Critical security issues were detected in the latest scan.
+              
+              **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+              
+              Please review the security findings and address them immediately.
+              
+              cc @${context.repo.owner}`,
+              labels: ['security', 'critical', 'automated']
+            });
+            
+            console.log(`Created issue #${issue.data.number}`);

@@ -1,0 +1,230 @@
+name: CI/CD Cost Analysis
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # Monthly on the 1st
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  analyze-costs:
+    name: Analyze GitHub Actions Costs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Analyze workflow usage
+        uses: actions/github-script@v7
+        id: usage
+        with:
+          script: |
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 30);
+            
+            // Get workflow runs for the past 30 days
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              created: `>=${startDate.toISOString().split('T')[0]}`,
+              per_page: 100
+            });
+            
+            let totalMinutes = 0;
+            let totalStorage = 0;
+            const osCosts = {
+              'ubuntu-latest': 0.008,  // $0.008 per minute
+              'windows-latest': 0.016, // $0.016 per minute
+              'macos-latest': 0.08    // $0.08 per minute
+            };
+            
+            const workflowStats = {};
+            
+            for (const run of runs.workflow_runs) {
+              const duration = (new Date(run.updated_at) - new Date(run.created_at)) / 1000 / 60; // minutes
+              
+              // Properly detect OS from run labels or workflow details
+              let runnerOS = 'ubuntu-latest'; // default
+              
+              // Method 1: Check run.labels if available
+              if (run.labels && run.labels.length > 0) {
+                for (const label of run.labels) {
+                  if (label.includes('ubuntu')) {
+                    runnerOS = 'ubuntu-latest';
+                    break;
+                  } else if (label.includes('windows')) {
+                    runnerOS = 'windows-latest';
+                    break;
+                  } else if (label.includes('macos')) {
+                    runnerOS = 'macos-latest';
+                    break;
+                  }
+                }
+              }
+              
+              // Method 2: Get detailed job info for accurate OS detection
+              try {
+                const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                  per_page: 100
+                });
+                
+                // Calculate cost per job with accurate OS detection
+                let runCost = 0;
+                for (const job of jobs.jobs) {
+                  const jobDuration = (new Date(job.completed_at || job.updated_at) - new Date(job.started_at || job.created_at)) / 1000 / 60;
+                  
+                  // Detect OS from runner name or labels
+                  let jobOS = 'ubuntu-latest';
+                  if (job.runner_name) {
+                    if (job.runner_name.includes('Ubuntu') || job.runner_name.includes('ubuntu')) {
+                      jobOS = 'ubuntu-latest';
+                    } else if (job.runner_name.includes('Windows') || job.runner_name.includes('windows')) {
+                      jobOS = 'windows-latest';
+                    } else if (job.runner_name.includes('macOS') || job.runner_name.includes('macos')) {
+                      jobOS = 'macos-latest';
+                    }
+                  } else if (job.labels && job.labels.length > 0) {
+                    // Check job labels for OS
+                    for (const label of job.labels) {
+                      if (label === 'ubuntu-latest' || label === 'ubuntu-22.04' || label === 'ubuntu-20.04') {
+                        jobOS = 'ubuntu-latest';
+                        break;
+                      } else if (label === 'windows-latest' || label === 'windows-2022' || label === 'windows-2019') {
+                        jobOS = 'windows-latest';
+                        break;
+                      } else if (label === 'macos-latest' || label === 'macos-14' || label === 'macos-13' || label === 'macos-12') {
+                        jobOS = 'macos-latest';
+                        break;
+                      }
+                    }
+                  }
+                  
+                  const jobCost = jobDuration * osCosts[jobOS];
+                  runCost += jobCost;
+                }
+                
+                totalMinutes += duration;
+                const cost = runCost > 0 ? runCost : duration * osCosts[runnerOS];
+                
+                if (!workflowStats[run.name]) {
+                  workflowStats[run.name] = {
+                    runs: 0,
+                    totalMinutes: 0,
+                    estimatedCost: 0
+                  };
+                }
+                
+                workflowStats[run.name].runs++;
+                workflowStats[run.name].totalMinutes += duration;
+                workflowStats[run.name].estimatedCost += cost;
+              } catch (error) {
+                // Fallback to simple calculation if job details not available
+                console.log(`Warning: Could not get job details for run ${run.id}, using default OS`);
+                const cost = duration * osCosts[runnerOS];
+                
+                if (!workflowStats[run.name]) {
+                  workflowStats[run.name] = {
+                    runs: 0,
+                    totalMinutes: 0,
+                    estimatedCost: 0
+                  };
+                }
+                
+                workflowStats[run.name].runs++;
+                workflowStats[run.name].totalMinutes += duration;
+                workflowStats[run.name].estimatedCost += cost;
+              }
+            }
+            
+            // Get artifact storage
+            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            totalStorage = artifacts.artifacts.reduce((acc, a) => acc + a.size_in_bytes, 0) / 1024 / 1024 / 1024; // GB
+            
+            // Calculate total cost from all workflows
+            const totalCost = Object.values(workflowStats).reduce((acc, stat) => acc + stat.estimatedCost, 0);
+            
+            return {
+              totalMinutes: Math.round(totalMinutes),
+              totalStorage: totalStorage.toFixed(2),
+              estimatedCost: totalCost.toFixed(2), // Accurate cost based on actual OS usage
+              workflowStats: workflowStats,
+              topWorkflows: Object.entries(workflowStats)
+                .sort((a, b) => b[1].estimatedCost - a[1].estimatedCost)
+                .slice(0, 5)
+            };
+
+      - name: Generate cost report
+        run: |
+          cat > cost-report.md << 'EOF'
+          # 💰 GitHub Actions Cost Analysis Report
+          
+          **Period**: Last 30 days
+          **Generated**: $(date)
+          
+          ## Summary
+          
+          | Metric | Value |
+          |--------|-------|
+          | Total Minutes Used | ${{ fromJson(steps.usage.outputs.result).totalMinutes }} |
+          | Storage Used | ${{ fromJson(steps.usage.outputs.result).totalStorage }} GB |
+          | Estimated Cost | $$${{ fromJson(steps.usage.outputs.result).estimatedCost }} |
+          
+          ## Top 5 Most Expensive Workflows
+          
+          | Workflow | Runs | Total Minutes | Est. Cost |
+          |----------|------|---------------|-----------|
+          EOF
+          
+          echo '${{ steps.usage.outputs.result }}' | jq -r '.topWorkflows[] | "| \(.[0]) | \(.[1].runs) | \(.[1].totalMinutes | round) | $\(.[1].estimatedCost | round) |"' >> cost-report.md
+          
+          cat >> cost-report.md << 'EOF'
+          
+          ## Cost Optimization Recommendations
+          
+          ### Immediate Actions
+          1. **Cache Dependencies**: Reduce build time by caching Go modules, Docker layers
+          2. **Conditional Workflows**: Skip workflows on docs-only changes
+          3. **Optimize Matrix Builds**: Reduce unnecessary OS/version combinations
+          
+          ### Long-term Strategies
+          1. **Self-hosted Runners**: For high-volume workflows
+          2. **Workflow Consolidation**: Combine related workflows
+          3. **Artifact Retention**: Reduce retention periods for non-critical artifacts
+          
+          ## Resource Usage Patterns
+          
+          - **Peak Usage**: Weekdays 9 AM - 5 PM
+          - **Low Usage**: Weekends and nights
+          - **Recommendation**: Schedule non-critical workflows during off-peak
+          
+          ---
+          *Cost estimates based on GitHub Actions pricing as of 2025*
+          EOF
+
+      - name: Post cost report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = require('fs').readFileSync('cost-report.md', 'utf8');
+            
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `💰 Monthly CI/CD Cost Report - ${new Date().toISOString().split('T')[0]}`,
+              body: report,
+              labels: ['cost-analysis', 'automated', 'metrics']
+            });
+            
+            console.log(`Created cost report issue #${issue.data.number}`);

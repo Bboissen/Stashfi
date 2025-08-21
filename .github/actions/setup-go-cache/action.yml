@@ -1,0 +1,38 @@
+name: 'Setup Go with Cache'
+description: 'Setup Go environment with intelligent caching'
+inputs:
+  go-version:
+    description: 'Go version to use'
+    required: false
+    default: '1.25'
+  working-directory:
+    description: 'Working directory for Go modules'
+    required: false
+    default: './services/api-gateway'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+    
+    - name: Cache Go build cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ inputs.go-version }}-
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        go mod download
+        go mod verify
