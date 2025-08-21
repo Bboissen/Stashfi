@@ -4,7 +4,7 @@
 # Kong image configuration
 image:
   repository: kong
-  tag: "3.9"
+  tag: "3.9.0"
   pullPolicy: IfNotPresent
 
 # Environment configuration
@@ -20,17 +20,18 @@ env:
   admin_gui_error_log: /dev/stderr
   portal_api_error_log: /dev/stderr
   prefix: /kong_prefix/
-  log_level: debug
+  log_level: info
 
 # Admin API configuration
+# NOTE: In production, use ClusterIP and access via kubectl port-forward or internal services only
 admin:
   enabled: true
-  type: NodePort
+  type: ClusterIP  # Changed from NodePort for security - admin API should not be publicly exposed
   http:
     enabled: true
     servicePort: 8001
     containerPort: 8001
-    nodePort: 32001
+    # nodePort removed - not needed for ClusterIP
   tls:
     enabled: false
 
