@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Colors for output
-RED='\033[0;31m'
+#RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
@@ -26,7 +26,7 @@ fi
 
 for dockerfile in $DOCKERFILES; do
     echo -e "\n${GREEN}Checking: ${dockerfile}${NC}"
-    
+
     # Process each FROM line
     while IFS= read -r line; do
         if [[ $line == FROM* ]]; then
@@ -36,12 +36,12 @@ for dockerfile in $DOCKERFILES; do
             else
                 base_image=$(echo "$line" | awk '{print $2}')
             fi
-            
+
             # Skip scratch and other special images
             if [[ $base_image == "scratch" ]] || [[ $base_image == "busybox" ]]; then
                 continue
             fi
-            
+
             # Parse image name and tag
             if [[ $base_image == *:* ]]; then
                 image_name=$(echo "$base_image" | cut -d: -f1)
@@ -50,30 +50,30 @@ for dockerfile in $DOCKERFILES; do
                 image_name=$base_image
                 current_tag="latest"
             fi
-            
+
             echo "  Current: $base_image"
-            
+
             # Check for updates based on image type
             new_tag=""
-            
+
             case "$image_name" in
                 "golang")
                     # Extract Go version from current tag (e.g., 1.25 from 1.25-alpine3.21)
                     go_version=$(echo "$current_tag" | grep -oE '^[0-9]+\.[0-9]+' || echo "1.25")
-                    
+
                     # Check for latest Alpine version with this Go version
                     new_tag=$(curl -s "https://hub.docker.com/v2/repositories/library/golang/tags?page_size=100" 2>/dev/null | \
                         jq -r --arg v "$go_version" '.results[] | select(.name | test("^" + $v + "-alpine3\\.[0-9]+$")) | .name' | \
                         sort -V | tail -1)
                     ;;
-                    
+
                 "alpine")
                     # Check for latest Alpine 3.x version
                     new_tag=$(curl -s "https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100" 2>/dev/null | \
                         jq -r '.results[] | select(.name | test("^3\\.[0-9]+$")) | .name' | \
                         sort -V | tail -1)
                     ;;
-                    
+
                 "node")
                     # Check for latest Node LTS Alpine
                     node_major=$(echo "$current_tag" | grep -oE '^[0-9]+' || echo "20")
@@ -81,19 +81,19 @@ for dockerfile in $DOCKERFILES; do
                         jq -r --arg v "$node_major" '.results[] | select(.name | test("^" + $v + "\\.[0-9]+\\.[0-9]+-alpine3\\.[0-9]+$")) | .name' | \
                         sort -V | tail -1)
                     ;;
-                    
+
                 "gcr.io/distroless/static"|"gcr.io/distroless/static-debian12")
                     # For distroless, we typically want nonroot
                     if [[ "$current_tag" != "nonroot" ]]; then
                         new_tag="nonroot"
                     fi
                     ;;
-                    
+
                 *)
                     echo "    ⚠️  Unknown image type: $image_name"
                     ;;
             esac
-            
+
             # Compare and report
             if [[ -n "$new_tag" ]] && [[ "$current_tag" != "$new_tag" ]]; then
                 echo -e "    ${GREEN}✅ Update available: ${image_name}:${new_tag}${NC}"
