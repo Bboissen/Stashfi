@@ -121,7 +121,7 @@ jobs:
         run: |
           cd ${{ env.SERVICE_PATH }}
           tar -czf coverage.tar.gz coverage.out coverage.html
-      
+
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -134,11 +134,11 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Coverage for Go ${{ matrix.go }}: ${COVERAGE}%"
           echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
-          
+
           # Add to job summary
           echo "### Test Coverage - Go ${{ matrix.go }}" >> $GITHUB_STEP_SUMMARY
           echo "Coverage: **${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
-          
+
           THRESHOLD=70
           # Using awk instead of bc for better portability
           if awk -v cov="$COVERAGE" -v thr="$THRESHOLD" 'BEGIN {exit !(cov < thr)}'; then
@@ -179,7 +179,7 @@ jobs:
         run: |
           cd ${{ env.SERVICE_PATH }}
           tar -czf binaries.tar.gz api-gateway-*
-      
+
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -52,14 +52,14 @@ jobs:
               IS_PRERELEASE="false"
             fi
           fi
-          
+
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "is-prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
-          
+
           # Get previous tag for changelog
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           echo "previous-tag=${PREVIOUS_TAG}" >> $GITHUB_OUTPUT
-          
+
           echo "Releasing version: ${VERSION}"
           echo "Previous version: ${PREVIOUS_TAG}"
           echo "Is prerelease: ${IS_PRERELEASE}"
@@ -69,52 +69,52 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           PREVIOUS="${{ steps.version.outputs.previous-tag }}"
-          
+
           if [ -z "$PREVIOUS" ]; then
             echo "No previous version, including all commits"
             RANGE=""
           else
             RANGE="${PREVIOUS}..HEAD"
           fi
-          
+
           # Generate changelog
           cat > CHANGELOG_TEMP.md << 'EOF'
           ## What's Changed
-          
+
           EOF
-          
+
           # Features
           echo "### ✨ Features" >> CHANGELOG_TEMP.md
           git log $RANGE --pretty=format:"- %s (%h)" --grep="^feat" >> CHANGELOG_TEMP.md || echo "- No new features" >> CHANGELOG_TEMP.md
           echo "" >> CHANGELOG_TEMP.md
-          
+
           # Bug Fixes
           echo "### 🐛 Bug Fixes" >> CHANGELOG_TEMP.md
           git log $RANGE --pretty=format:"- %s (%h)" --grep="^fix" >> CHANGELOG_TEMP.md || echo "- No bug fixes" >> CHANGELOG_TEMP.md
           echo "" >> CHANGELOG_TEMP.md
-          
+
           # Documentation
           echo "### 📚 Documentation" >> CHANGELOG_TEMP.md
           git log $RANGE --pretty=format:"- %s (%h)" --grep="^docs" >> CHANGELOG_TEMP.md || echo "- No documentation updates" >> CHANGELOG_TEMP.md
           echo "" >> CHANGELOG_TEMP.md
-          
+
           # Other Changes
           echo "### 🔧 Other Changes" >> CHANGELOG_TEMP.md
           git log $RANGE --pretty=format:"- %s (%h)" --grep -v "^feat\|^fix\|^docs" | head -10 >> CHANGELOG_TEMP.md || echo "- Various improvements" >> CHANGELOG_TEMP.md
           echo "" >> CHANGELOG_TEMP.md
-          
+
           # Contributors
           echo "### 👥 Contributors" >> CHANGELOG_TEMP.md
           git log $RANGE --pretty=format:"%an" | sort -u | while read name; do
             echo "- @$name" >> CHANGELOG_TEMP.md
           done
-          
+
           # Stats
           echo "" >> CHANGELOG_TEMP.md
           echo "### 📊 Stats" >> CHANGELOG_TEMP.md
           echo "- Commits: $(git rev-list --count $RANGE)" >> CHANGELOG_TEMP.md
           echo "- Changed files: $(git diff --name-only $RANGE | wc -l)" >> CHANGELOG_TEMP.md
-          
+
           # Set multiline output
           {
             echo 'changelog<<EOF'
@@ -220,7 +220,7 @@ jobs:
             VERSION=${{ needs.prepare-release.outputs.version }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
-      
+
       - name: Build and push Docker image (GHCR only)
         if: env.DOCKERHUB_USERNAME == '' || env.DOCKERHUB_TOKEN == ''
         id: build-ghcr
@@ -284,7 +284,7 @@ jobs:
             DIGEST="${{ steps.build-ghcr.outputs.digest }}"
           fi
           echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
-          
+
       - name: Generate attestation
         uses: actions/attest-build-provenance@v1
         with:
@@ -307,7 +307,7 @@ jobs:
         run: |
           VERSION="${{ needs.prepare-release.outputs.version }}"
           VERSION_NO_V="${VERSION#v}"  # Remove 'v' prefix
-          
+
           for chart in infra/helm/*; do
             if [ -f "$chart/Chart.yaml" ]; then
               sed -i "s/^version:.*/version: ${VERSION_NO_V}/" "$chart/Chart.yaml"
@@ -318,7 +318,7 @@ jobs:
       - name: Package Helm charts
         run: |
           mkdir -p helm-packages
-          
+
           for chart in infra/helm/*; do
             if [ -f "$chart/Chart.yaml" ]; then
               helm dependency update "$chart"
@@ -357,30 +357,30 @@ jobs:
           name: Release ${{ needs.prepare-release.outputs.version }}
           body: |
             # Release ${{ needs.prepare-release.outputs.version }}
-            
+
             ${{ needs.prepare-release.outputs.changelog }}
-            
+
             ## 📦 Installation
-            
+
             ### Docker
             ```bash
             docker pull ghcr.io/${{ github.repository_owner }}/api-gateway:${{ needs.prepare-release.outputs.version }}
             ```
-            
+
             ### Helm
             ```bash
             helm install stashfi-kong ./kong-${{ needs.prepare-release.outputs.version }}.tgz
             ```
-            
+
             ### Binary
             Download the appropriate binary for your platform from the assets below.
-            
+
             ## 🔐 Verification
-            
+
             All Docker images are signed and include SBOM attestation.
-            
+
             ## 📝 Full Changelog
-            
+
             ${{ needs.prepare-release.outputs.previous-tag != '' && format('[{0}...{1}](https://github.com/{2}/compare/{0}...{1})', needs.prepare-release.outputs.previous-tag, needs.prepare-release.outputs.version, github.repository) || 'Initial Release' }}
           draft: false
           prerelease: ${{ needs.prepare-release.outputs.is-prerelease == 'true' }}
@@ -404,7 +404,7 @@ jobs:
         run: |
           echo "Deploying version ${{ needs.prepare-release.outputs.version }} to staging..."
           # Add actual deployment commands here
-          
+
       - name: Run smoke tests
         run: |
           echo "Running smoke tests on staging..."

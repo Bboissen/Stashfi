@@ -185,7 +185,7 @@ jobs:
         run: |
           # Install grype for vulnerability scanning
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.82.0
-          
+
           # Install sbom-scorecard
           pip install sbom-scorecard
 
@@ -319,7 +319,7 @@ jobs:
 
           # Evaluate policy
           opa eval -d supply-chain-policy.rego -i policy-input.json "data.supply_chain.allow" > policy-result.json
-          
+
           # Check result
           if jq -e '.result[0].expressions[0].value == true' policy-result.json > /dev/null; then
             echo "✅ Supply chain policy compliance: PASSED" >> $GITHUB_STEP_SUMMARY
@@ -342,10 +342,10 @@ jobs:
         with:
           script: |
             const status = ${{ job.status == 'success' }} ? 'success' : 'failure';
-            const description = status === 'success' 
+            const description = status === 'success'
               ? 'Supply chain verification passed'
               : 'Supply chain verification failed';
-            
+
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,

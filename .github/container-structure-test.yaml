@@ -38,7 +38,7 @@ fileExistenceTests:
   - name: "No shell (bash)"
     path: "/bin/bash"
     shouldExist: false
-    
+
   - name: "No shell (dash)"
     path: "/bin/dash"
     shouldExist: false

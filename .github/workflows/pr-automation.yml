@@ -33,7 +33,7 @@ jobs:
             const pr = context.payload.pull_request;
             const title = pr.title.toLowerCase();
             const labels = [];
-            
+
             // Conventional commit types
             if (title.startsWith('feat:') || title.startsWith('feature:')) labels.push('enhancement');
             if (title.startsWith('fix:')) labels.push('bug');
@@ -44,7 +44,7 @@ jobs:
             if (title.startsWith('perf:')) labels.push('performance');
             if (title.startsWith('security:')) labels.push('security');
             if (title.includes('breaking')) labels.push('breaking-change');
-            
+
             // Size labels based on diff
             const { additions, deletions } = pr;
             const changes = additions + deletions;
@@ -53,7 +53,7 @@ jobs:
             else if (changes < 200) labels.push('size/M');
             else if (changes < 500) labels.push('size/L');
             else labels.push('size/XL');
-            
+
             if (labels.length > 0) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
@@ -99,54 +99,54 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const body = pr.body || '';
-            
+
             // Check for minimum description length
             if (body.length < 50) {
               core.setFailed('PR description is too short. Please provide a detailed description.');
               return;
             }
-            
+
             // Check for required sections
             const requiredSections = ['## What', '## Why', '## How'];
-            const missingSections = requiredSections.filter(section => 
+            const missingSections = requiredSections.filter(section =>
               !body.includes(section)
             );
-            
+
             if (missingSections.length > 0) {
               const comment = `
               ## 📝 PR Description Required
-              
+
               Please update your PR description to include the following sections:
               ${missingSections.map(s => `- ${s}`).join('\n')}
-              
+
               Example template:
               \`\`\`markdown
               ## What
               Brief description of the changes
-              
+
               ## Why
               Motivation and context for the changes
-              
+
               ## How
               Technical approach and implementation details
-              
+
               ## Testing
               How the changes were tested
-              
+
               ## Checklist
               - [ ] Tests added/updated
               - [ ] Documentation updated
               - [ ] No breaking changes
               \`\`\`
               `;
-              
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
                 body: comment
               });
-              
+
               core.setFailed('PR description is missing required sections');
             }
 
@@ -165,9 +165,9 @@ jobs:
               repo: context.repo.repo,
               pull_number: pr.number
             });
-            
+
             const reviewers = new Set();
-            
+
             // Code owners mapping
             for (const file of files.data) {
               if (file.filename.startsWith('services/api-gateway/')) {
@@ -180,7 +180,7 @@ jobs:
                 reviewers.add('platform-team');
               }
             }
-            
+
             if (reviewers.size > 0) {
               await github.rest.pulls.requestReviewers({
                 owner: context.repo.owner,
@@ -204,10 +204,10 @@ jobs:
             const pr = context.payload.pull_request;
             const { additions, deletions, changed_files } = pr;
             const totalChanges = additions + deletions;
-            
+
             let comment = '';
             let shouldWarn = false;
-            
+
             if (totalChanges > 800) {
               shouldWarn = true;
               comment += '## ⚠️ Large PR Detected\n\n';
@@ -218,14 +218,14 @@ jobs:
               comment += '- Separate refactoring from new features\n';
               comment += '- Create a PR stack for dependent changes\n';
             }
-            
+
             if (changed_files > 20) {
               shouldWarn = true;
               comment += '## 📁 Many Files Changed\n\n';
               comment += `This PR modifies ${changed_files} files. `;
               comment += 'This might make it difficult to review thoroughly.\n';
             }
-            
+
             if (shouldWarn) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -279,37 +279,37 @@ jobs:
           script: |
             const coverage = process.env.coverage;
             const pr = context.payload.pull_request;
-            
+
             const comment = `## 📊 Test Coverage Report
-            
+
             **Overall Coverage:** ${coverage}
-            
+
             | Status | Coverage | Threshold |
             |--------|----------|-----------|
             | ${parseFloat(coverage) >= 70 ? '✅' : '❌'} | ${coverage} | 70% |
-            
+
             <details>
             <summary>Coverage Details</summary>
-            
+
             Run \`go test -cover ./...\` locally for detailed coverage information.
-            
+
             </details>
-            
+
             ---
             *Coverage report generated for commit ${pr.head.sha.substring(0, 7)}*
             `;
-            
+
             // Find and update existing comment or create new one
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: pr.number
             });
-            
-            const botComment = comments.find(comment => 
+
+            const botComment = comments.find(comment =>
               comment.user.type === 'Bot' && comment.body.includes('Test Coverage Report')
             );
-            
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -338,18 +338,18 @@ jobs:
             const comment = context.payload.comment.body;
             const commenter = context.payload.comment.user.login;
             const pr = context.payload.issue.number;
-            
+
             // Check if commenter has write permission
             const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
               username: commenter
             });
-            
+
             if (!['admin', 'write'].includes(permission.permission)) {
               return;
             }
-            
+
             // Handle commands
             if (comment === '/rebase') {
               await github.rest.issues.createComment({
@@ -360,7 +360,7 @@ jobs:
               });
               // Trigger rebase workflow
             }
-            
+
             if (comment === '/update-snapshots') {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -370,7 +370,7 @@ jobs:
               });
               // Trigger snapshot update
             }
-            
+
             if (comment === '/benchmark') {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
