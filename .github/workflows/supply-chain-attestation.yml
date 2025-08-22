@@ -29,8 +29,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     outputs:
       image-digest: ${{ steps.image.outputs.digest }}
-      provenance-name: ${{ steps.provenance.outputs.name }}
-      provenance-digest: ${{ steps.provenance.outputs.digest }}
+      image-tag: ${{ steps.image.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,14 +60,12 @@ jobs:
           echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
-      - name: Generate SLSA provenance
-        id: provenance
-        uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          digest: ${{ steps.image.outputs.digest }}
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
+      # SLSA provenance generation would be a separate job calling the reusable workflow
+      # For now, we'll use cosign to sign the image directly
+      - name: Sign container image
+        run: |
+          cosign sign --yes \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.image.outputs.digest }}
 
   verify-supply-chain:
     name: Verify Supply Chain
