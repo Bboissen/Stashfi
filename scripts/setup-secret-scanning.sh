@@ -27,7 +27,7 @@ echo "Detected OS: ${OS_TYPE}"
 install_tool() {
     local tool=$1
     local install_cmd=$2
-    
+
     if command -v "$tool" &> /dev/null; then
         echo -e "${GREEN}✓${NC} $tool is already installed"
     else
@@ -115,10 +115,10 @@ fi
 if command -v git-secrets &> /dev/null; then
     # Install git-secrets hooks
     git secrets --install --force
-    
+
     # Add common patterns
     git secrets --register-aws
-    
+
     # Add custom patterns for Stashfi
     git secrets --add 'KONG_[A-Z_]+\s*=\s*["\x27]?[a-zA-Z0-9_\-]{20,}'
     git secrets --add 'API_KEY\s*=\s*["\x27]?[a-zA-Z0-9_\-]{20,}'
@@ -126,7 +126,7 @@ if command -v git-secrets &> /dev/null; then
     git secrets --add 'TOKEN\s*=\s*["\x27]?[a-zA-Z0-9_\-]{20,}'
     git secrets --add 'postgresql://[^:]+:[^@]+@'
     git secrets --add 'mongodb://[^:]+:[^@]+@'
-    
+
     echo -e "${GREEN}✓${NC} git-secrets configured"
 else
     echo -e "${YELLOW}⚠${NC} git-secrets not installed"
