@@ -183,6 +183,9 @@ bin/
 cmd/**/bin/
 services/*/api-gateway
 services/*/*.exe
+/services/api-gateway/api-gateway
+/tests/
+docs/
 
 # Rust
 target/
