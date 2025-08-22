@@ -3,7 +3,7 @@
 <h1>🐿️ Stashfi</h1>
 <p><strong>On-chain smart trading & automated strategies for everyone.</strong></p>
 
-<sub><em>Gather acorns today 🌰<br>Grow a forest tomorrow 🌳</em></sub>
+<sub><em>Compound over seasons 🌰<br>Grow the forest you intend 🌳</em></sub>
 
 <img alt="status" src="https://img.shields.io/badge/status-Build%20in%20Public-orange" />
 <img alt="license" src="https://img.shields.io/badge/license-No License-red" />
