@@ -1,23 +1,44 @@
 # Root-level mise configuration for the Stashfi monorepo
 
-## Settings
-##
-# Enable the lockfile so that mise generates and uses a `mise.lock` file.
 [settings]
 lockfile = true
 
-## Tools
-##
-# Shared tool versions used across all services in the repository.  This ensures
-# every contributor and CI job uses the same Node, Python, Go and tooling versions.
 [tools]
-node    = "22.18.0"  # LTS release for Node.js
-go      = "1.23.4"   # Latest stable Go version
-uv      = "0.8.12"   # Universal virtualenv manager
-helm    = "3.16.3"   # Kubernetes package manager
-kubectl = "1.31.3"   # Kubernetes CLI
-minikube = "1.34.0"  # Local Kubernetes cluster runtime
+# Core development runtimes
+node = "latest"
+go   = "latest"
+uv   = "latest"
 
-##
-# This root file intentionally contains only shared configuration.  Service‑specific
-# tasks and overrides live in their respective `services/<name>/mise.toml` files.
+# Kubernetes and Helm tooling
+helm    = "latest"
+kubectl = "latest"
+minikube = "latest"
+kubeconform = "latest"  # Modern replacement for deprecated kubeval, with ARM support
+pluto = "latest"
+
+# Linters and formatters
+#hadolint = "latest"      # Dockerfile linter - No Darwin arm_64 version available
+shellcheck = "latest"   # Shell script analyzer
+shfmt = "latest"        # Shell script formatter
+yq = "latest"           # YAML/JSON processor
+"pipx:yamllint" = "latest"
+"npm:@commitlint/cli" = "latest"
+
+# Git hooks and commit management
+"pipx:pre-commit" = "latest"
+"pipx:commitizen" = "latest"
+
+# Go tooling
+# Corrected gitleaks path to use the canonical Go module import path
+"go:github.com/zricethezav/gitleaks/v8" = "latest"
+"go:github.com/golangci/golangci-lint/v2/cmd/golangci-lint" = "latest"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+
+# Security scanners
+"pipx:detect-secrets" = "latest"
+"go:github.com/securego/gosec/v2/cmd/gosec" = "latest"
+"go:github.com/google/osv-scanner/cmd/osv-scanner" = "latest"
+
+
+# NOTE: "@commitlint/cli" is now managed in the root package.json
