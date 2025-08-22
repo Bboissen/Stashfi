@@ -113,31 +113,31 @@ jobs:
           # For ARM64 runners, would need: opa_linux_arm64_static
           curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
           chmod +x opa
-          
+
           # Create basic security policies
           cat > security-policies.rego << 'EOF'
           package kubernetes.security
-          
+
           deny[msg] {
             input.kind == "Deployment"
             not input.spec.template.spec.securityContext.runAsNonRoot
             msg := "Containers must run as non-root user"
           }
-          
+
           deny[msg] {
             input.kind == "Deployment"
             container := input.spec.template.spec.containers[_]
             not container.resources.limits.memory
             msg := sprintf("Container '%s' must have memory limits", [container.name])
           }
-          
+
           deny[msg] {
             input.kind == "Deployment"
             container := input.spec.template.spec.containers[_]
             not container.resources.limits.cpu
             msg := sprintf("Container '%s' must have CPU limits", [container.name])
           }
-          
+
           deny[msg] {
             input.kind == "Service"
             input.spec.type == "NodePort"
@@ -145,11 +145,11 @@ jobs:
             msg := "NodePort services must specify explicit nodePort"
           }
           EOF
-          
+
           # Install yq for YAML to JSON conversion
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
-          
+
           # Run OPA validation with JSON input
           find infra/k8s -name "*.yaml" -o -name "*.yml" | while read file; do
             echo "Policy check: $file"
@@ -169,27 +169,27 @@ jobs:
       - name: Check resource specifications
         run: |
           echo "Checking resource specifications..."
-          
+
           # Check for missing resource limits/requests
           for file in infra/k8s/*.yaml; do
             if grep -q "kind: Deployment" "$file"; then
               echo "Checking $file for resource specifications..."
-              
+
               # Check for limits
               if ! grep -q "limits:" "$file"; then
                 echo "⚠️  Warning: $file missing resource limits"
               fi
-              
+
               # Check for requests
               if ! grep -q "requests:" "$file"; then
                 echo "⚠️  Warning: $file missing resource requests"
               fi
-              
+
               # Check for probes
               if ! grep -q "livenessProbe:" "$file"; then
                 echo "⚠️  Warning: $file missing liveness probe"
               fi
-              
+
               if ! grep -q "readinessProbe:" "$file"; then
                 echo "⚠️  Warning: $file missing readiness probe"
               fi
@@ -224,24 +224,24 @@ jobs:
         run: |
           cat > k8s-validation-report.md << 'EOF'
           # Kubernetes Validation Report
-          
+
           ## Validation Results
           - YAML Syntax: ✅ Passed
           - Kubernetes API Validation: ✅ Passed
           - Deprecated APIs: Checked
           - Security Policies: Evaluated
           - Resource Specifications: Analyzed
-          
+
           ## Recommendations
           1. Ensure all deployments have resource limits and requests
           2. Implement NetworkPolicies for network segmentation
           3. Use RBAC for proper access control
           4. Enable security contexts for all containers
           5. Implement pod security standards
-          
+
           Generated: $(date)
           EOF
-          
+
           cat k8s-validation-report.md
 
       - name: Upload validation report

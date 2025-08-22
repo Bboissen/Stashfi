@@ -124,7 +124,7 @@ jobs:
           # Update image to use test version
           sed -i 's|image: stashfi/api-gateway:latest|image: stashfi/api-gateway:test|' infra/k8s/api-gateway-deployment.yaml
           kubectl apply -f infra/k8s/api-gateway-deployment.yaml
-          
+
           # Wait for deployment
           kubectl wait --for=condition=available \
             --timeout=300s \
@@ -135,10 +135,10 @@ jobs:
         run: |
           echo "Waiting for all pods to be ready..."
           kubectl wait --for=condition=ready pod --all -n stashfi --timeout=300s
-          
+
           echo "Pod status:"
           kubectl get pods -n stashfi
-          
+
           echo "Service status:"
           kubectl get svc -n stashfi
 
@@ -153,19 +153,19 @@ jobs:
             echo "Waiting for Kong proxy... ($i/30)"
             sleep 5
           done
-          
+
           # Test all endpoints
           curl -f http://localhost:8080/health
           curl -f http://localhost:8080/ready
           curl -f http://localhost:8080/api/v1/status
-          
+
           echo "✅ All smoke tests passed"
 
       - name: Run integration test suite
         run: |
           cat > integration_test.go << 'EOF'
           package main
-          
+
           import (
               "encoding/json"
               "fmt"
@@ -174,63 +174,63 @@ jobs:
               "testing"
               "time"
           )
-          
+
           const baseURL = "http://localhost:8080"
-          
+
           func TestHealthEndpoint(t *testing.T) {
               resp, err := http.Get(baseURL + "/health")
               if err != nil {
                   t.Fatalf("Failed to call health endpoint: %v", err)
               }
               defer resp.Body.Close()
-              
+
               if resp.StatusCode != http.StatusOK {
                   t.Errorf("Expected status 200, got %d", resp.StatusCode)
               }
-              
+
               var result map[string]any
               if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
                   t.Errorf("Failed to decode response: %v", err)
               }
-              
+
               if result["status"] != "healthy" {
                   t.Errorf("Expected status 'healthy', got %v", result["status"])
               }
           }
-          
+
           func TestReadyEndpoint(t *testing.T) {
               resp, err := http.Get(baseURL + "/ready")
               if err != nil {
                   t.Fatalf("Failed to call ready endpoint: %v", err)
               }
               defer resp.Body.Close()
-              
+
               if resp.StatusCode != http.StatusOK {
                   t.Errorf("Expected status 200, got %d", resp.StatusCode)
               }
           }
-          
+
           func TestAPIStatus(t *testing.T) {
               resp, err := http.Get(baseURL + "/api/v1/status")
               if err != nil {
                   t.Fatalf("Failed to call status endpoint: %v", err)
               }
               defer resp.Body.Close()
-              
+
               var result map[string]any
               if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
                   t.Errorf("Failed to decode response: %v", err)
               }
-              
+
               if result["service"] != "api-gateway" {
                   t.Errorf("Expected service 'api-gateway', got %v", result["service"])
               }
-              
+
               if result["status"] != "operational" {
                   t.Errorf("Expected status 'operational', got %v", result["status"])
               }
           }
-          
+
           func TestMain(m *testing.M) {
               // Wait for services to be ready
               for i := 0; i < 30; i++ {
@@ -240,11 +240,11 @@ jobs:
                   }
                   time.Sleep(2 * time.Second)
               }
-              
+
               os.Exit(m.Run())
           }
           EOF
-          
+
           go test -v integration_test.go
 
       - name: Run load tests with k6
@@ -255,12 +255,12 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
           sudo apt-get install k6
-          
+
           # Create k6 test script
           cat > loadtest.js << 'EOF'
           import http from 'k6/http';
           import { check, sleep } from 'k6';
-          
+
           export let options = {
             stages: [
               { duration: '30s', target: 20 },   // Ramp up
@@ -272,25 +272,25 @@ jobs:
               http_req_failed: ['rate<0.1'],     // Error rate must be below 10%
             },
           };
-          
+
           export default function () {
             let responses = http.batch([
               ['GET', 'http://localhost:8080/health'],
               ['GET', 'http://localhost:8080/ready'],
               ['GET', 'http://localhost:8080/api/v1/status'],
             ]);
-            
+
             for (let resp of responses) {
               check(resp, {
                 'status is 200': (r) => r.status === 200,
                 'response time < 500ms': (r) => r.timings.duration < 500,
               });
             }
-            
+
             sleep(1);
           }
           EOF
-          
+
           k6 run loadtest.js || true
 
       - name: Run chaos tests
@@ -298,7 +298,7 @@ jobs:
         run: |
           # Install chaos mesh
           curl -sSL https://mirrors.chaos-mesh.org/v2.6.3/install.sh | bash -s -- --local kind --name integration-test
-          
+
           # Create basic chaos experiment
           cat > chaos-test.yaml << 'EOF'
           apiVersion: chaos-mesh.org/v1alpha1
@@ -316,19 +316,19 @@ jobs:
               labelSelectors:
                 app: api-gateway
           EOF
-          
+
           kubectl apply -f chaos-test.yaml
-          
+
           # Wait and test resilience
           sleep 10
-          
+
           # Service should still respond (other replica)
           curl -f http://localhost:8080/health || echo "Service degraded as expected"
-          
+
           # Wait for recovery
           sleep 30
           kubectl delete -f chaos-test.yaml
-          
+
           # Verify recovery
           curl -f http://localhost:8080/health
           echo "✅ Service recovered from chaos test"
@@ -338,13 +338,13 @@ jobs:
         run: |
           echo "=== Kong logs ==="
           kubectl logs -n stashfi -l app.kubernetes.io/name=kong --tail=50
-          
+
           echo "=== API Gateway logs ==="
           kubectl logs -n stashfi -l app=api-gateway --tail=50
-          
+
           echo "=== Pod descriptions ==="
           kubectl describe pods -n stashfi
-          
+
           echo "=== Events ==="
           kubectl get events -n stashfi --sort-by='.lastTimestamp'
 
@@ -353,30 +353,30 @@ jobs:
         run: |
           cat > integration-test-report.md << 'EOF'
           # Integration Test Report
-          
+
           ## Test Environment
           - Kubernetes: v${{ env.KUBERNETES_VERSION }}
           - Kong: v${{ env.KONG_VERSION }}
           - Cluster: Kind
-          
+
           ## Test Results
           - Smoke Tests: ✅ Passed
           - Integration Tests: ✅ Passed
           - Load Tests: ✅ Completed
           - Chaos Tests: ${{ github.event_name == 'schedule' && '✅ Passed' || '⏭️ Skipped' }}
-          
+
           ## Performance Metrics
           - 95th percentile response time: <500ms
           - Error rate: <10%
           - Throughput: 20 concurrent users
-          
+
           Generated: $(date)
           EOF
 
       - name: Compress test artifacts
         if: always()
         run: tar -czf integration-test-artifacts.tar.gz integration-test-report.md loadtest.js *.log 2>/dev/null || true
-      
+
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -406,14 +406,14 @@ jobs:
         run: |
           eval $(minikube docker-env)
           docker build -t stashfi/api-gateway:test ./services/api-gateway
-          
+
           # Verify image is loaded
           docker images | grep stashfi
 
       - name: Deploy stack
         run: |
           ./scripts/deploy-local.sh || true
-          
+
           # Override with test image
           kubectl set image deployment/api-gateway api-gateway=stashfi/api-gateway:test -n stashfi
 
@@ -421,10 +421,10 @@ jobs:
         run: |
           # Get minikube service URL
           KONG_URL=$(minikube service kong-kong-proxy -n stashfi --url | head -1)
-          
+
           # Test endpoints
           curl -f "$KONG_URL/health"
           curl -f "$KONG_URL/ready"
           curl -f "$KONG_URL/api/v1/status"
-          
+
           echo "✅ Minikube integration tests passed"

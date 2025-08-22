@@ -79,7 +79,7 @@ jobs:
             --validate \
             --namespace stashfi \
             > /tmp/manifest-default.yaml
-          
+
           # Test with production values (if exists)
           if [ -f "infra/helm/${{ matrix.chart }}/values-prod.yaml" ]; then
             helm template test-release infra/helm/${{ matrix.chart }} \
@@ -89,7 +89,7 @@ jobs:
               --namespace stashfi \
               > /tmp/manifest-prod.yaml
           fi
-          
+
           echo "✅ Helm templates generated successfully"
 
       - name: Validate generated Kubernetes manifests
@@ -154,7 +154,7 @@ jobs:
         run: |
           # Extract Kong dbless config
           yq eval '.dblessConfig.config' infra/helm/kong/values.yaml > /tmp/kong-config.yaml
-          
+
           # Validate Kong configuration syntax using correct Kong image version
           docker run --rm -v /tmp:/tmp \
             kong:${{ env.KONG_IMAGE_VERSION }} \
@@ -164,10 +164,10 @@ jobs:
         run: |
           CHART_VERSION=$(yq eval '.version' infra/helm/${{ matrix.chart }}/Chart.yaml)
           APP_VERSION=$(yq eval '.appVersion' infra/helm/${{ matrix.chart }}/Chart.yaml)
-          
+
           echo "Chart version: $CHART_VERSION"
           echo "App version: $APP_VERSION"
-          
+
           # Check if versions follow semver
           if ! echo "$CHART_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
             echo "❌ Chart version does not follow semver"
@@ -289,6 +289,6 @@ jobs:
           mkdir -p gh-pages
           cp /tmp/*.tgz gh-pages/
           helm repo index gh-pages --url https://${{ github.repository_owner }}.github.io/stashfi/charts
-          
+
           # Would need to commit to gh-pages branch
           echo "Chart packaged and ready for publishing"

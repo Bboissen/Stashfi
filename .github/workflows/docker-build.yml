@@ -305,7 +305,7 @@ jobs:
             -e PORT=8080 \
             -e ENV=test \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
-          
+
           # Wait for container to be healthy
           for i in {1..30}; do
             if curl -f http://localhost:8080/health; then
@@ -315,13 +315,13 @@ jobs:
             echo "Waiting for container to be ready... ($i/30)"
             sleep 2
           done
-          
+
           # Test all endpoints
           curl -f http://localhost:8080/ready
           curl -f http://localhost:8080/api/v1/status
-          
+
           # Check container logs
           docker logs api-gateway
-          
+
           # Stop container
           docker stop api-gateway
