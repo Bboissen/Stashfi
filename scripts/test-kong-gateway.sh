@@ -72,17 +72,17 @@ test_endpoint() {
     local endpoint=$1
     local expected_field=$2
     local description=$3
-    
+
     echo -e "\n${YELLOW}Testing $endpoint - $description${NC}"
-    
+
     RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" "$KONG_URL$endpoint")
     HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
     BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS:")
-    
+
     if [ "$HTTP_STATUS" = "200" ]; then
         echo -e "${GREEN}✅ Status: 200 OK${NC}"
         echo "Response: $BODY"
-        
+
         # Check if expected field exists in response
         if echo "$BODY" | grep -q "$expected_field"; then
             echo -e "${GREEN}✅ Response contains '$expected_field'${NC}"
@@ -107,7 +107,7 @@ echo -e "\n${YELLOW}Testing Kong Admin API...${NC}"
 ADMIN_URL="http://127.0.0.1:32001"
 if curl -s -o /dev/null -w "%{http_code}" "$ADMIN_URL" | grep -q "200\|301\|302"; then
     echo -e "${GREEN}✅ Kong Admin API is accessible at $ADMIN_URL${NC}"
-    
+
     # Get routes from Kong
     echo -e "\n${YELLOW}Kong Routes:${NC}"
     curl -s "$ADMIN_URL/routes" | python3 -m json.tool 2>/dev/null | head -20 || echo "Unable to format JSON"
