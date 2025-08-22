@@ -62,7 +62,7 @@ dblessConfig:
   config: |
     _format_version: "3.0"
     _transform: true
-    
+
     services:
     - name: health-check
       url: http://api-gateway-service:8080
@@ -75,7 +75,7 @@ dblessConfig:
         paths:
         - /ready
         strip_path: false
-    
+
     - name: api-v1
       url: http://api-gateway-service:8080
       routes:
