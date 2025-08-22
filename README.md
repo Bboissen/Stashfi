@@ -63,6 +63,3 @@ This project is currently source-available. A formal open-source license will be
 - **Follow Progress**: Watch or star the repository.
 
 ---
-
-
-
