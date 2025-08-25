@@ -16,35 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install mise
-        uses: jdx/mise-action@v2
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          install: true
+          go-version: '1.25.x'
           cache: true
-          experimental: true
-
-      - name: Install tools from mise.toml
-        run: |
-          # Copy root mise files to service directory
-          cp ../../mise.toml .
-          cp ../../mise.lock . 2>/dev/null || true
-          # Install tools (will use .mise.toml if present, else mise.toml)
-          mise install
-          mise list
 
       - name: Run tests
-        run: |
-          eval "$(mise activate bash)"
-          go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Build
-        run: |
-          eval "$(mise activate bash)"
-          go build -v .
+        run: go build -v .
 
       - name: Lint
         run: |
-          eval "$(mise activate bash)"
           go vet ./...
           gofmt -l -d .
 
@@ -61,7 +46,7 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./services/api-gateway
           file: ./services/api-gateway/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
@@ -79,24 +64,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install mise
-        uses: jdx/mise-action@v2
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
         with:
-          install: true
-          cache: true
-
-      - name: Install Helm via mise
-        run: |
-          # Add helm to mise.toml if not present
-          if ! grep -q "^helm = " mise.toml; then
-            echo 'helm = "3.16.3"' >> mise.toml
-          fi
-          mise install helm
-          eval "$(mise activate bash)"
-          helm version
+          version: '3.16.3'
 
       - name: Lint Helm charts
         run: |
-          eval "$(mise activate bash)"
+          helm version
           helm lint infra/helm/kong
           # Add other charts as they're created
