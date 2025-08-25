@@ -30,7 +30,7 @@ permissions:
 env:
   HELM_VERSION: '3.16.3'
   KONG_CHART_VERSION: '2.51.0'
-  KONG_IMAGE_VERSION: '3.9.0'
+  KONG_IMAGE_VERSION: '3.9.1'
   KUBERNETES_VERSION: '1.30.0'
 
 jobs:
@@ -139,7 +139,20 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64|amd64)
+              YQ_BIN=yq_linux_amd64
+              ;;
+            aarch64|arm64)
+              YQ_BIN=yq_linux_arm64
+              ;;
+            *)
+              echo "Unsupported architecture: $ARCH" >&2
+              exit 1
+              ;;
+          esac
+          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v4.47.1/${YQ_BIN}"
           sudo chmod +x /usr/local/bin/yq
           yq --version
 
@@ -200,7 +213,7 @@ jobs:
           version: ${{ env.HELM_VERSION }}
 
       - name: Create Kind cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.10.0
         with:
           cluster_name: helm-test
           version: v0.24.0
