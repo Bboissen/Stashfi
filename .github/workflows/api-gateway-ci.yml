@@ -27,7 +27,7 @@ permissions:
   # Additional permissions will be set at job level as needed
 
 env:
-  GO_VERSION: '1.25.0'
+  GO_VERSION: '1.25.x'
   SERVICE_PATH: './services/api-gateway'
 
 jobs:
@@ -67,8 +67,6 @@ jobs:
           working-directory: ${{ env.SERVICE_PATH }}
           args: --timeout=5m --config=.golangci.yml
           skip-cache: false
-          skip-pkg-cache: false
-          skip-build-cache: false
 
       - name: Check for go.mod tidiness
         run: |
@@ -88,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false  # Continue testing other versions even if one fails
       matrix:
-        go: ['1.24', '1.25']  # Test on multiple Go versions
+        go: ['1.22.x', '1.25.x']  # Test on multiple Go versions
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -140,12 +138,13 @@ jobs:
           echo "Coverage: **${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
           THRESHOLD=70
-          # Using awk instead of bc for better portability
-          if awk -v cov="$COVERAGE" -v thr="$THRESHOLD" 'BEGIN {exit !(cov < thr)}'; then
+          # Fail if coverage is below threshold
+          if awk -v cov="$COVERAGE" -v thr="$THRESHOLD" 'BEGIN { exit (cov >= thr ? 0 : 1) }'; then
+            echo "✅ Coverage meets threshold (≥${THRESHOLD}%)" >> $GITHUB_STEP_SUMMARY
+          else
             echo "❌ Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
-          echo "✅ Coverage meets threshold (≥${THRESHOLD}%)" >> $GITHUB_STEP_SUMMARY
         working-directory: ${{ env.SERVICE_PATH }}
 
   build:
