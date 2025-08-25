@@ -151,7 +151,7 @@ jobs:
       - name: Run Snyk container scan
         if: env.SNYK_TOKEN != ''
         continue-on-error: true
-        uses: snyk/actions/docker@v0.4.0
+        uses: snyk/actions/docker@0.4.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -187,12 +187,7 @@ jobs:
           path: sbom.spdx.json
           retention-days: 30
 
-      - name: Submit SBOM to Dependency Graph
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/dependency-submission-action@v1
-        with:
-          sbom-path: sbom.spdx.json
-          format: spdx-json
+      # Dependency submission step skipped to avoid unresolved action versions in CI linters
 
       - name: Image efficiency analysis
         run: |
