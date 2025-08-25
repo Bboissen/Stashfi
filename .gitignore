@@ -216,3 +216,7 @@ infra/helm/**/Chart.lock
 .claude/
 claude.md
 *guide.md
+
+# database
+*.sql
+*.dbdiagram
