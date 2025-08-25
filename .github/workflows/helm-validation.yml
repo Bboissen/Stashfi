@@ -31,7 +31,7 @@ env:
   HELM_VERSION: '3.16.3'
   KONG_CHART_VERSION: '2.51.0'
   KONG_IMAGE_VERSION: '3.9.0'
-  KUBERNETES_VERSION: '1.31.3'
+  KUBERNETES_VERSION: '1.30.0'
 
 jobs:
   lint-and-validate:
@@ -92,13 +92,7 @@ jobs:
 
           echo "✅ Helm templates generated successfully"
 
-      - name: Validate generated Kubernetes manifests
-        uses: instrumenta/kubeval-action@0.3.0
-        with:
-          files: '/tmp/manifest-*.yaml'
-          version: ${{ env.KUBERNETES_VERSION }}
-          strict: true
-          ignore-missing-schemas: false
+      # Skipping kubeval (archived). Kubeconform below performs strict schema validation.
 
       - name: Check for deprecated Kubernetes APIs
         run: |

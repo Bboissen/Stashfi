@@ -36,9 +36,9 @@ permissions:
   # No additional permissions needed for integration tests
 
 env:
-  KUBERNETES_VERSION: '1.31.3'
+  KUBERNETES_VERSION: '1.30.0'
   KONG_VERSION: '3.9.0'
-  GO_VERSION: '1.25.0'
+  GO_VERSION: '1.25.x'
 
 jobs:
   integration-test-kind:

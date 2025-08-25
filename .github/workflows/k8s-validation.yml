@@ -28,7 +28,7 @@ permissions:
   # No additional permissions needed for validation
 
 env:
-  KUBERNETES_VERSION: '1.31.3'
+  KUBERNETES_VERSION: '1.30.0'
 
 jobs:
   validate-manifests:
@@ -63,13 +63,7 @@ jobs:
           done
           echo "✅ All manifests passed dry-run validation"
 
-      - name: Validate with Kubeval
-        uses: instrumenta/kubeval-action@0.3.0
-        with:
-          files: 'infra/k8s'
-          version: ${{ env.KUBERNETES_VERSION }}
-          strict: true
-          ignore-missing-schemas: false
+      # Skipping kubeval (archived). Kubeconform below performs strict schema validation.
 
       - name: Run Kubeconform validation
         run: |
