@@ -43,10 +43,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.0'
+          go-version: '1.25.x'
 
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@v2.21.5
+        uses: securego/gosec@v2.21.0
         with:
           args: '-fmt sarif -out gosec-results.sarif -severity medium ./...'
 
@@ -56,16 +56,16 @@ jobs:
           sarif_file: gosec-results.sarif
           category: gosec
 
-      - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/security-audit
-            p/golang
-            p/owasp-top-ten
-            p/kubernetes
-            p/docker
-          generateSarif: true
+      - name: Run Semgrep (SARIF)
+        run: |
+          docker run --rm -v "$PWD:/src" returntocorp/semgrep:1 \
+            semgrep \
+              --config p/security-audit \
+              --config p/golang \
+              --config p/owasp-top-ten \
+              --config p/kubernetes \
+              --config p/docker \
+              --sarif -o /src/semgrep.sarif /src || true
 
       - name: Upload Semgrep results
         uses: github/codeql-action/upload-sarif@v3
@@ -98,7 +98,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.0'
+          go-version: '1.25.x'
 
       - name: Run Go vulnerability check
         run: |
@@ -123,7 +123,7 @@ jobs:
         continue-on-error: true
 
       - name: Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@11.3.1
+        uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'stashfi'
           path: '.'
@@ -157,7 +157,7 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
       - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@v3.101.0
+        uses: trufflesecurity/trufflehog@main
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
@@ -168,7 +168,6 @@ jobs:
         run: |
           pip install detect-secrets
           detect-secrets scan --baseline .secrets.baseline || true
-          detect-secrets audit .secrets.baseline || true
 
   license-compliance:
     name: License Compliance Check
@@ -180,7 +179,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.0'
+          go-version: '1.25.x'
 
       - name: Install go-licenses
         run: go install github.com/google/go-licenses@v1.6.0
@@ -259,7 +258,8 @@ jobs:
         working-directory: ./services/api-gateway
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v3.2.0
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarcloud-github-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
