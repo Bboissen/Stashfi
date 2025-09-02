@@ -1,3 +1,4 @@
+// Package main implements the Stashfi API Gateway service.
 package main
 
 import (
@@ -70,7 +71,7 @@ func setupLogger() *slog.Logger {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	case "pretty":
 		// Text handler with more readable output for development
-		opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
+		opts.ReplaceAttr = func(_ []string, a slog.Attr) slog.Attr {
 			// Customize timestamp format for better readability
 			if a.Key == slog.TimeKey {
 				return slog.String("time", a.Value.Time().Format("15:04:05.000"))
@@ -233,7 +234,7 @@ type APIStatusResponse struct {
 }
 
 func (s *Server) handleHealth() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := HealthResponse{
 			Status:    "healthy",
 			Timestamp: time.Now().Unix(),
@@ -243,7 +244,7 @@ func (s *Server) handleHealth() http.HandlerFunc {
 }
 
 func (s *Server) handleReady() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := HealthResponse{
 			Status:    "ready",
 			Timestamp: time.Now().Unix(),
@@ -253,7 +254,7 @@ func (s *Server) handleReady() http.HandlerFunc {
 }
 
 func (s *Server) handleAPIStatus() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := APIStatusResponse{
 			Service:   "api-gateway",
 			Version:   "0.1.0",
@@ -378,7 +379,7 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		server.logger.Error("server forced to shutdown", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	server.logger.Info("server shutdown complete")
