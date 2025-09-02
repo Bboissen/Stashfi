@@ -109,7 +109,7 @@ jobs:
         working-directory: ${{ env.SERVICE_PATH }}
 
       - name: Upload coverage to Codecov
-        if: env.CODECOV_TOKEN != ''
+        if: env.CODECOV_TOKEN != '' && !env.ACT  # Skip when running locally with act
         uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -125,12 +125,22 @@ jobs:
           cd ${{ env.SERVICE_PATH }}
           tar -czf coverage.tar.gz coverage.out coverage.html
 
+      # Upload artifacts to GitHub (skipped when running locally)
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
+        if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: coverage-${{ matrix.go }}
           path: ${{ env.SERVICE_PATH }}/coverage.tar.gz
           retention-days: 7
+
+      # Alternative: Save artifacts locally when running with act
+      - name: Save coverage artifacts locally
+        if: ${{ env.ACT }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts
+          cp ${{ env.SERVICE_PATH }}/coverage.tar.gz /tmp/artifacts/coverage-${{ matrix.go }}.tar.gz
+          echo "📦 Artifact saved locally to /tmp/artifacts/coverage-${{ matrix.go }}.tar.gz"
 
       - name: Check test coverage threshold
         run: |
@@ -184,12 +194,22 @@ jobs:
           cd ${{ env.SERVICE_PATH }}
           tar -czf binaries.tar.gz api-gateway-*
 
+      # Upload artifacts to GitHub (skipped when running locally)
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
+        if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: binary-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ env.SERVICE_PATH }}/binaries.tar.gz
           retention-days: 7
+
+      # Alternative: Save artifacts locally when running with act
+      - name: Save binary artifacts locally
+        if: ${{ env.ACT }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts
+          cp ${{ env.SERVICE_PATH }}/binaries.tar.gz /tmp/artifacts/binary-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          echo "📦 Binary saved locally to /tmp/artifacts/binary-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
 
   vulnerability-scan:
     name: Vulnerability Scanning
