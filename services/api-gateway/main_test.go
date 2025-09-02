@@ -86,3 +86,41 @@ func TestIsProduction(t *testing.T) {
 		t.Error("isProduction() should return false in test environment")
 	}
 }
+
+func TestRecoveryMiddleware(t *testing.T) {
+	server := NewServer()
+
+	// Create a handler that panics
+	panicHandler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("test panic")
+	})
+
+	// Wrap it with recovery middleware
+	recoveryWrapped := server.recoveryMiddleware(panicHandler)
+
+	req := httptest.NewRequest("GET", "/panic", nil)
+	w := httptest.NewRecorder()
+
+	// This should not panic, but return 500
+	recoveryWrapped.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d after panic, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+func TestRespondError(t *testing.T) {
+	server := NewServer()
+	w := httptest.NewRecorder()
+
+	server.respondError(w, http.StatusBadRequest, "test error")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+}
