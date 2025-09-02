@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload SBOMs
         uses: actions/upload-artifact@v4
-        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
+        if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: sboms-${{ matrix.component.name }}
           path: |
@@ -118,7 +118,7 @@ jobs:
           retention-days: 90
 
       - name: Save SBOMs locally
-        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        if: ${{ env.ACT }}  # Only run locally with act
         run: |
           mkdir -p /tmp/artifacts/sboms
           cp -r ${{ matrix.component.path }}/sbom-*.json /tmp/artifacts/sboms/ 2>/dev/null || true
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload analysis reports
         uses: actions/upload-artifact@v4
-        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
+        if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: sbom-analysis-reports
           path: |
@@ -248,7 +248,7 @@ jobs:
           retention-days: 30
 
       - name: Save analysis reports locally
-        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        if: ${{ env.ACT }}  # Only run locally with act
         run: |
           mkdir -p /tmp/artifacts
           cp *-report.md sbom-summary.md /tmp/artifacts/ 2>/dev/null || true
