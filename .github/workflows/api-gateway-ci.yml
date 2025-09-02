@@ -109,7 +109,7 @@ jobs:
         working-directory: ${{ env.SERVICE_PATH }}
 
       - name: Upload coverage to Codecov
-        if: ${{ env.CODECOV_TOKEN != '' && env.ACT != 'true' }}  # Skip when running locally with act
+        if: ${{ env.CODECOV_TOKEN != '' && !env.ACT }}  # Skip when running locally with act
         uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -128,7 +128,7 @@ jobs:
       # Upload artifacts to GitHub (skipped when running locally)
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
-        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
+        if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: coverage-${{ matrix.go }}
           path: ${{ env.SERVICE_PATH }}/coverage.tar.gz
@@ -136,7 +136,7 @@ jobs:
 
       # Alternative: Save artifacts locally when running with act
       - name: Save coverage artifacts locally
-        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        if: ${{ env.ACT }}  # Only run locally with act
         run: |
           mkdir -p /tmp/artifacts
           cp ${{ env.SERVICE_PATH }}/coverage.tar.gz /tmp/artifacts/coverage-${{ matrix.go }}.tar.gz
@@ -197,7 +197,7 @@ jobs:
       # Upload artifacts to GitHub (skipped when running locally)
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
-        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
+        if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: binary-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ env.SERVICE_PATH }}/binaries.tar.gz
@@ -205,7 +205,7 @@ jobs:
 
       # Alternative: Save artifacts locally when running with act
       - name: Save binary artifacts locally
-        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        if: ${{ env.ACT }}  # Only run locally with act
         run: |
           mkdir -p /tmp/artifacts
           cp ${{ env.SERVICE_PATH }}/binaries.tar.gz /tmp/artifacts/binary-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
@@ -233,7 +233,7 @@ jobs:
 
       - name: Run Nancy dependency scan
         run: |
-          go list -json -deps ./... | docker run --rm -i sonatypecorp/nancy:v1.0.46 sleuth
+          go list -json -deps ./... | docker run --rm -i sonatypecommunity/nancy:latest sleuth
         working-directory: ${{ env.SERVICE_PATH }}
         continue-on-error: true  # Don't fail the build but report issues
 
