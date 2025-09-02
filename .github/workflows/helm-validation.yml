@@ -102,7 +102,7 @@ jobs:
             --target-versions k8s=v${{ env.KUBERNETES_VERSION }}
 
       - name: Scan Helm chart for security issues
-        uses: bridgecrewio/checkov-action@v12.2961.0
+        uses: bridgecrewio/checkov-action@master
         with:
           directory: infra/helm/${{ matrix.chart }}
           framework: helm
@@ -213,7 +213,7 @@ jobs:
           version: ${{ env.HELM_VERSION }}
 
       - name: Create Kind cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1
         with:
           cluster_name: helm-test
           version: v0.24.0
