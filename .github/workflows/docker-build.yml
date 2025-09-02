@@ -133,7 +133,7 @@ jobs:
         run: docker load --input /tmp/image.tar
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.31.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
           format: 'sarif'
@@ -151,7 +151,7 @@ jobs:
       - name: Run Snyk container scan
         if: env.SNYK_TOKEN != ''
         continue-on-error: true
-        uses: snyk/actions/docker@0.4.0
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -277,7 +277,7 @@ jobs:
     if: github.event_name == 'pull_request'
     services:
       kong:
-        image: kong:3.9
+        image: kong:3.9.1
         env:
           KONG_DATABASE: "off"
           KONG_DECLARATIVE_CONFIG: /kong/kong.yml
