@@ -9,14 +9,14 @@ This document tracks all versions used across the Stashfi project to ensure cons
 | Go | 1.25.0 | mise.toml, go.mod, Dockerfile, workflows |
 | Node.js | 22.18.0 | mise.toml |
 | Python | 3.12 | mise.toml |
-| Alpine Linux | 3.20.3 | Dockerfile |
+| Alpine Linux | 3.22 | Dockerfile |
 
 ## Kubernetes & Container Orchestration
 
 | Component | Version | Usage |
 |-----------|---------|-------|
 | Kubernetes | 1.31.3 | Validation, testing |
-| Kong | 3.9.0 | API Gateway |
+| Kong | 3.9.1 | API Gateway |
 | Kong Helm Chart | 2.51.0 | Helm deployment |
 | Helm | 3.16.3 | Package management |
 | Kind | 0.26.0 | Local K8s testing |
@@ -44,7 +44,7 @@ This document tracks all versions used across the Stashfi project to ensure cons
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Trivy | 0.31.0 | Container scanning |
+| Trivy | 0.59.0 | Container scanning |
 | Snyk | 0.4.0 | Vulnerability scanning |
 | Gitleaks | 8.21.2 | Secret detection |
 | TruffleHog | latest | Secret scanning |
@@ -79,10 +79,10 @@ This document tracks all versions used across the Stashfi project to ensure cons
 
 | Image | Version | Usage |
 |-------|---------|-------|
-| golang | 1.25.0-alpine3.20 | Build stage |
+| golang | 1.25.0-alpine3.22 | Build stage |
 | gcr.io/distroless/static-debian12 | nonroot | Runtime stage (secure) |
-| kong | 3.9.0 | API Gateway |
-| alpine | 3.20.3 | Build tools only |
+| kong | 3.9.1 | API Gateway |
+| alpine | 3.22 | Build tools only |
 
 ## Pre-commit Hooks
 
@@ -125,7 +125,7 @@ helm version
 docker --version
 
 # Check Kong version
-docker run --rm kong:3.9.0 kong version
+docker run --rm kong:3.9.1 kong version
 ```
 
 ## Automated Version Checking
@@ -148,8 +148,8 @@ The `dependency-update.yml` workflow runs weekly to:
 
 - Go 1.25.0: Minimum version for enhanced ServeMux routing
 - Kubernetes 1.31.3: Latest stable with Gateway API support
-- Kong 3.9.0: Latest OSS version with declarative config
-- Alpine 3.20.3: Latest stable with minimal CVEs
+- Kong 3.9.1: Latest OSS version with declarative config
+- Alpine 3.22: Latest stable with minimal CVEs
 - Distroless: Using static-debian12:nonroot for security
 
 ## Workflow Logic Notes
@@ -160,4 +160,4 @@ The `dependency-update.yml` workflow runs weekly to:
 - Staging deployment skipped for prereleases
 - Boolean inputs properly handled (not compared as strings)
 
-Last Updated: 2024-12-19
+Last Updated: 2025-08-25
