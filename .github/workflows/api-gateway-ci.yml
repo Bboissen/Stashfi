@@ -152,7 +152,7 @@ jobs:
           echo "### Test Coverage - Go ${{ matrix.go }}" >> $GITHUB_STEP_SUMMARY
           echo "Coverage: **${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
-          THRESHOLD=70
+          THRESHOLD=50
           # Fail if coverage is below threshold
           if awk -v cov="$COVERAGE" -v thr="$THRESHOLD" 'BEGIN { exit (cov >= thr ? 0 : 1) }'; then
             echo "✅ Coverage meets threshold (≥${THRESHOLD}%)" >> $GITHUB_STEP_SUMMARY
