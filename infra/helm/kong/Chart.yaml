@@ -3,7 +3,7 @@ name: stashfi-kong
 description: Kong API Gateway configuration for Stashfi
 type: application
 version: 0.1.0
-appVersion: "3.9"
+appVersion: "3.9.1"
 
 dependencies:
   - name: kong
