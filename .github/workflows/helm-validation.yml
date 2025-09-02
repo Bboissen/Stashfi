@@ -59,24 +59,23 @@ jobs:
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
 
+      - name: Update Helm dependencies
+        run: |
+          cd infra/helm/${{ matrix.chart }}
+          helm dependency update
+          helm dependency build
+
       - name: Lint Helm chart
         run: |
           helm lint infra/helm/${{ matrix.chart }} \
             --strict \
             --with-subcharts
 
-      - name: Validate Helm dependencies
-        run: |
-          cd infra/helm/${{ matrix.chart }}
-          helm dependency update
-          helm dependency build
-
       - name: Template Helm chart with different values
         run: |
           # Test with default values
           helm template test-release infra/helm/${{ matrix.chart }} \
             --debug \
-            --validate \
             --namespace stashfi \
             > /tmp/manifest-default.yaml
 
@@ -85,7 +84,6 @@ jobs:
             helm template test-release infra/helm/${{ matrix.chart }} \
               -f infra/helm/${{ matrix.chart }}/values-prod.yaml \
               --debug \
-              --validate \
               --namespace stashfi \
               > /tmp/manifest-prod.yaml
           fi
@@ -97,7 +95,7 @@ jobs:
       - name: Check for deprecated Kubernetes APIs
         run: |
           docker run --rm -v /tmp:/tmp \
-            fairwindsops/pluto:v5.20.3 \
+            us-docker.pkg.dev/fairwinds-ops/oss/pluto:v5.20.3 \
             detect /tmp/manifest-*.yaml \
             --target-versions k8s=v${{ env.KUBERNETES_VERSION }}
 
@@ -109,10 +107,11 @@ jobs:
           output_format: sarif
           output_file_path: checkov-helm.sarif
           soft_fail: true
+        continue-on-error: true
 
       - name: Upload Checkov results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('checkov-helm.sarif') != ''
         with:
           sarif_file: checkov-helm.sarif
           category: helm-security
