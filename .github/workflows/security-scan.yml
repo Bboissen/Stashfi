@@ -197,9 +197,17 @@ jobs:
 
       - name: Upload license report
         uses: actions/upload-artifact@v4
+        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
         with:
           name: license-report
           path: services/api-gateway/licenses.csv
+
+      - name: Save license report locally
+        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts
+          cp services/api-gateway/licenses.csv /tmp/artifacts/ 2>/dev/null || true
+          echo "📦 License report saved locally to /tmp/artifacts/"
 
   infrastructure-scanning:
     name: Infrastructure Security Scanning
@@ -351,10 +359,18 @@ jobs:
 
       - name: Upload security report
         uses: actions/upload-artifact@v4
+        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
         with:
           name: security-report
           path: security-report.md
           retention-days: 30
+
+      - name: Save security report locally
+        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts
+          cp security-report.md /tmp/artifacts/ 2>/dev/null || true
+          echo "📦 Security report saved locally to /tmp/artifacts/"
 
       - name: Create security issue if critical findings
         if: failure()

@@ -108,6 +108,7 @@ jobs:
 
       - name: Upload SBOMs
         uses: actions/upload-artifact@v4
+        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
         with:
           name: sboms-${{ matrix.component.name }}
           path: |
@@ -115,6 +116,13 @@ jobs:
             ${{ matrix.component.path }}/_manifest/
             ${{ matrix.component.path }}/vex.json
           retention-days: 90
+
+      - name: Save SBOMs locally
+        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts/sboms
+          cp -r ${{ matrix.component.path }}/sbom-*.json /tmp/artifacts/sboms/ 2>/dev/null || true
+          echo "📦 SBOMs saved locally to /tmp/artifacts/sboms/"
 
       - name: Submit to Dependency Track
         if: github.ref == 'refs/heads/main'
@@ -231,12 +239,20 @@ jobs:
 
       - name: Upload analysis reports
         uses: actions/upload-artifact@v4
+        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
         with:
           name: sbom-analysis-reports
           path: |
             *-report.md
             sbom-summary.md
           retention-days: 30
+
+      - name: Save analysis reports locally
+        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts
+          cp *-report.md sbom-summary.md /tmp/artifacts/ 2>/dev/null || true
+          echo "📦 Analysis reports saved locally to /tmp/artifacts/"
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'

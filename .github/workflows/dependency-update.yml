@@ -259,7 +259,7 @@ jobs:
       - name: Update GitHub Actions
         uses: actions/dependency-review-action@v4
         with:
-          config: dependency-review-config.yml
+          config-file: dependency-review-config.yml
 
       - name: Check for action updates
         run: |
@@ -443,9 +443,17 @@ jobs:
 
       - name: Upload reports
         uses: actions/upload-artifact@v4
+        if: ${{ env.ACT != 'true' }}  # Skip when running locally with act
         with:
           name: dependency-reports
           path: |
             dependency-report.md
             sbom.json
           retention-days: 30
+
+      - name: Save reports locally
+        if: ${{ env.ACT == 'true' }}  # Only run locally with act
+        run: |
+          mkdir -p /tmp/artifacts
+          cp dependency-report.md sbom.json /tmp/artifacts/ 2>/dev/null || true
+          echo "📦 Reports saved locally to /tmp/artifacts/"
