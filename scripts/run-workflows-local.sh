@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # Local runner for GitHub workflows using act
 # Usage:
 #   scripts/run-workflows-local.sh [--all | --core] [--arch linux/arm64|linux/amd64]
-# Defaults to --core and autodetected container arch.
+# Defaults to --all and autodetected container arch.
 
 ARCH=""
-MODE="core" # core or all
+MODE="all" # core or all
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,23 +55,65 @@ docker pull "$RUNNER_IMAGE" >/dev/null
 
 set -x
 
+# Helper to run a job and capture result
+run_job() {
+  local wf="$1"; local job="$2"
+  local label="${wf##*/}:${job}"
+  echo "\n=== Running ${label} ===\n"
+  if act push "${MAP_PLATFORM[@]}" -W "$wf" -j "$job"; then
+    RESULTS+=("OK ${label}")
+  else
+    RESULTS+=("FAIL ${label}")
+  fi
+}
+
+RESULTS=()
+
 if [[ "$MODE" == "core" ]]; then
   # Core validation covering the feature work
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/api-gateway-ci.yml -j lint-and-format
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/api-gateway-ci.yml -j test
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/api-gateway-ci.yml -j build
+  run_job .github/workflows/api-gateway-ci.yml lint-and-format
+  run_job .github/workflows/api-gateway-ci.yml test
+  run_job .github/workflows/api-gateway-ci.yml build
+  run_job .github/workflows/api-gateway-ci.yml vulnerability-scan
 
   # Basic CI jobs
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/ci.yml -j api-gateway
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/ci.yml -j docker-build
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/ci.yml -j helm-lint
+  run_job .github/workflows/ci.yml api-gateway
+  run_job .github/workflows/ci.yml docker-build
+  run_job .github/workflows/ci.yml helm-lint
 
   # Helm chart validation (lint + template + checks)
-  act push "${MAP_PLATFORM[@]}" -W .github/workflows/helm-validation.yml -j lint-and-validate || true
+  run_job .github/workflows/helm-validation.yml lint-and-validate
+  run_job .github/workflows/helm-validation.yml test-helm-upgrade
 else
   # Run all push-triggered workflows (will be heavy and slow)
-  act push "${MAP_PLATFORM[@]}"
+  # act does not support running all jobs across all workflows in a single command reliably,
+  # so we enumerate key workflows that matter locally.
+  run_job .github/workflows/api-gateway-ci.yml lint-and-format
+  run_job .github/workflows/api-gateway-ci.yml test
+  run_job .github/workflows/api-gateway-ci.yml build
+  run_job .github/workflows/api-gateway-ci.yml vulnerability-scan
+
+  run_job .github/workflows/ci.yml api-gateway
+  run_job .github/workflows/ci.yml docker-build
+  run_job .github/workflows/ci.yml helm-lint
+
+  run_job .github/workflows/helm-validation.yml lint-and-validate
+  run_job .github/workflows/helm-validation.yml test-helm-upgrade
 fi
 
 set +x
-echo "✅ Done. Review logs above for any failures."
+
+echo "\n==== Summary ===="
+FAIL_FOUND=0
+for r in "${RESULTS[@]}"; do
+  echo "$r"
+  [[ "$r" == FAIL* ]] && FAIL_FOUND=1
+done
+
+if [[ $FAIL_FOUND -eq 0 ]]; then
+  echo "✅ All selected jobs passed"
+  exit 0
+else
+  echo "❌ Some jobs failed (see logs above), but all were executed"
+  exit 1
+fi

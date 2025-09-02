@@ -1,5 +1,5 @@
 # Multi-stage build for Go API Gateway
-FROM golang:1.23-alpine3.21 AS builder
+FROM golang:1.25-alpine3.22 AS builder
 
 RUN apk add --no-cache git
 
@@ -12,7 +12,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api-gateway .
 
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN apk --no-cache add ca-certificates
 
