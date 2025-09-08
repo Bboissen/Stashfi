@@ -36,20 +36,20 @@ runs:
   using: 'composite'
   steps:
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
+      uses: docker/setup-qemu-action@v3.6.0
       with:
         platforms: arm64
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v3.11.1
       with:
         driver-opts: |
           network=host
-          image=moby/buildkit:latest
+          image=moby/buildkit:v0.18.1
 
     - name: Generate metadata
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@v5.8.0
       with:
         images: ${{ inputs.registry }}/${{ inputs.image-name }}
         tags: |
@@ -60,7 +60,7 @@ runs:
 
     - name: Build Docker image
       id: build
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v6.18.0
       with:
         context: ${{ inputs.context }}
         platforms: ${{ inputs.platforms }}
@@ -77,7 +77,7 @@ runs:
 
     - name: Run Trivy scan
       id: scan
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@0.33.1
       with:
         input: /tmp/image.tar
         format: 'sarif'
