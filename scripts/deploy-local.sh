@@ -30,7 +30,7 @@ mise list | grep -E "go|helm|kubectl|minikube" || true
 echo "📦 Checking minikube status..."
 if ! minikube status &> /dev/null; then
     echo "🔧 Starting minikube..."
-    minikube start --cpus=4 --memory=8192 --kubernetes-version=v1.31.0
+    minikube start --cpus=4 --memory=8192 --kubernetes-version=v1.31.3
 else
     echo "✅ minikube is already running"
 fi

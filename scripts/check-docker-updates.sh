@@ -58,7 +58,7 @@ for dockerfile in $DOCKERFILES; do
 
             case "$image_name" in
                 "golang")
-                    # Extract Go version from current tag (e.g., 1.25 from 1.25-alpine3.21)
+                    # Extract Go version from current tag (e.g., 1.25 from 1.25-alpine3.22)
                     go_version=$(echo "$current_tag" | grep -oE '^[0-9]+\.[0-9]+' || echo "1.25")
 
                     # Check for latest Alpine version with this Go version
