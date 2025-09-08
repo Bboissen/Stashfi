@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: mixed-line-ending
+        args: ["--fix=auto"]
+
+  - repo: local
+    hooks:
+      - id: version-guard
+        name: Version guard (pin actions/tools)
+        entry: bash scripts/version-guard.sh
+        language: system
+        files: ^\.github/(workflows|actions)/.*\.ya?ml$
+        pass_filenames: false
