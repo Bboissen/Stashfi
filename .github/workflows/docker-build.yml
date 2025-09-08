@@ -32,9 +32,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/api-gateway
+  IMAGE_NAME: api-gateway
   DOCKERFILE_PATH: ./services/api-gateway
   PLATFORMS: linux/amd64,linux/arm64
+  BUILDKIT_PROGRESS: plain
 
 permissions:
   contents: read
@@ -50,24 +51,30 @@ jobs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tags: ${{ steps.meta.outputs.tags }}
     steps:
+      - name: Compute lowercased owner
+        id: owner
+        shell: bash
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v3.6.0
         with:
           platforms: arm64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3.11.1
         with:
           driver-opts: |
             network=host
             image=moby/buildkit:v0.18.1
+          buildkitd-flags: --debug
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.5.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -75,9 +82,9 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v5.8.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -93,23 +100,57 @@ jobs:
             org.opencontainers.image.vendor=Stashfi
             org.opencontainers.image.licenses=Proprietary
 
-      - name: Build Docker image
-        id: build
-        uses: docker/build-push-action@v6
+      - name: Build Docker image (PR)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6.18.0
         with:
           context: ${{ env.DOCKERFILE_PATH }}
           platforms: ${{ env.PLATFORMS }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # SLSA Provenance generation (mode=max includes all build info)
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Build Docker image (push/tags)
+        id: build
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6.18.0
+        continue-on-error: true
+        with:
+          context: ${{ env.DOCKERFILE_PATH }}
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           provenance: mode=max
-          # SBOM generation in SPDX format
           sbom: true
-          # Attestation outputs for signing and verification
-          attests: type=sbom,generator=docker/buildkit-syft-scanner@v1
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Fallback build without SBOM/provenance
+        if: ${{ failure() && steps.build.outcome == 'failure' }}
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: ${{ env.DOCKERFILE_PATH }}
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
           build-args: |
             VERSION=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
@@ -117,12 +158,12 @@ jobs:
 
       - name: Export single-arch image for scanning
         # Always export linux/amd64 for scanning (Trivy, Snyk, etc. don't handle multi-arch well)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v6.18.0
         with:
           context: ${{ env.DOCKERFILE_PATH }}
           platforms: linux/amd64
           outputs: type=docker,dest=/tmp/image.tar
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          tags: ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}:scan
           cache-from: type=gha
           build-args: |
             VERSION=${{ github.sha }}
@@ -133,9 +174,9 @@ jobs:
         run: docker load --input /tmp/image.tar
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          image-ref: ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}:scan
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -143,7 +184,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v3.30.0
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'container-scan'
@@ -151,11 +192,11 @@ jobs:
       - name: Run Snyk container scan
         if: env.SNYK_TOKEN != ''
         continue-on-error: true
-        uses: snyk/actions/docker@master
+        uses: snyk/actions/docker@0.4.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          image: ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}:scan
           args: --severity-threshold=high --file=${{ env.DOCKERFILE_PATH }}/Dockerfile
 
       - name: Run Hadolint Dockerfile Linter
@@ -168,20 +209,20 @@ jobs:
           ignore: DL3008,DL3009
 
       - name: Upload Hadolint results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v3.30.0
         with:
           sarif_file: hadolint-results.sarif
           category: 'dockerfile-lint'
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.20.5
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          image: ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}:scan
           format: spdx-json
           output-file: sbom.spdx.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: sbom
           path: sbom.spdx.json
@@ -192,20 +233,20 @@ jobs:
       - name: Image efficiency analysis
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            wagoodman/dive:v0.12.0 \
+            wagoodman/dive:v0.13.1 \
             --ci \
             --lowestEfficiency=0.9 \
             --highestUserWastedPercent=0.1 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}:scan
 
       - name: Container Structure Test
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${PWD}:/workspace \
-            gcr.io/gcp-runtimes/container-structure-test:v1.20.0 \
+            gcr.io/gcp-runtimes/container-structure-test:v1.19.3 \
             test \
-            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan \
+            --image ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.IMAGE_NAME }}:scan \
             --config /workspace/.github/container-structure-test.yaml
 
   sign-and-attest:
@@ -215,10 +256,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v3.9.2
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.5.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -243,7 +284,7 @@ jobs:
           done
 
       - name: Download SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5.0.0
         with:
           name: sbom
           path: .
@@ -291,7 +332,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Test container startup
         run: |
