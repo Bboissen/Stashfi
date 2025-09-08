@@ -1,0 +1,27 @@
+name: Version Guard
+
+on:
+  push:
+    branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "chore/**" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Enforce Pinned Versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ripgrep
+
+      - name: Run version guard
+        run: bash scripts/version-guard.sh
