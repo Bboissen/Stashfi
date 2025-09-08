@@ -30,11 +30,11 @@ jobs:
             type: go
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Set up Go
         if: matrix.component.type == 'go'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6.0.0
         with:
           go-version: '1.25.0'
           cache-dependency-path: ${{ matrix.component.path }}/go.sum
@@ -42,7 +42,7 @@ jobs:
       - name: Install SBOM tools
         run: |
           # Install syft for SBOM generation
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
 
           # Install cyclonedx CLI
           npm install -g @cyclonedx/cli
@@ -107,7 +107,7 @@ jobs:
           EOF
 
       - name: Upload SBOMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: sboms-${{ matrix.component.name }}
@@ -141,7 +141,7 @@ jobs:
     needs: generate-sboms
     steps:
       - name: Download all SBOMs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5.0.0
         with:
           pattern: sboms-*
           merge-multiple: true
@@ -149,15 +149,15 @@ jobs:
       - name: Install analysis tools
         run: |
           # Install grype for vulnerability scanning
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.82.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.99.1
 
           # Install nancy for Go vulnerability scanning
-          curl -L -o nancy https://github.com/sonatype-nexus-community/nancy/releases/download/v1.0.46/nancy-v1.0.46-linux-amd64
+          curl -L -o nancy https://github.com/sonatype-nexus-community/nancy/releases/download/v1.0.51/nancy-v1.0.51-linux-amd64
           chmod +x nancy
           sudo mv nancy /usr/local/bin/
 
           # Install OSV scanner
-          go install github.com/google/osv-scanner/cmd/osv-scanner@v1.9.1
+          go install github.com/google/osv-scanner/cmd/osv-scanner@v2.2.2
 
       - name: Scan for vulnerabilities
         run: |
@@ -220,9 +220,9 @@ jobs:
           - Microsoft SBOM
 
           ## Tools Used
-          - Syft v1.18.0
+          - Syft v1.32.0
           - Microsoft sbom-tool v3.0.1
-          - Grype v0.82.0
+          - Grype v0.99.1
 
           ## Next Steps
           1. Review vulnerability report
@@ -238,7 +238,7 @@ jobs:
           cat vulnerability-report.md >> sbom-summary.md
 
       - name: Upload analysis reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: sbom-analysis-reports
@@ -256,7 +256,7 @@ jobs:
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -276,10 +276,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Download all SBOMs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5.0.0
         with:
           pattern: sboms-*
           path: .sboms/

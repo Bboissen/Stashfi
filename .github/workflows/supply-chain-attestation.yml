@@ -32,7 +32,7 @@ jobs:
       image-tag: ${{ steps.image.outputs.tag }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Install SLSA tools
         run: |
@@ -42,7 +42,7 @@ jobs:
           sudo mv slsa-verifier /usr/local/bin/
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.5.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -85,10 +85,10 @@ jobs:
           sudo mv slsa-verifier /usr/local/bin/
 
           # Install syft for SBOM verification
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.5.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -167,7 +167,7 @@ jobs:
           cat supply-chain-report.md
 
       - name: Upload verification report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: supply-chain-report
           path: supply-chain-report.md
@@ -181,13 +181,13 @@ jobs:
       - name: Install analysis tools
         run: |
           # Install grype for vulnerability scanning
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.82.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.99.1
 
           # Install sbom-scorecard
           pip install sbom-scorecard
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.5.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -229,7 +229,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Upload analysis results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: sbom-analysis
           path: |
@@ -244,11 +244,11 @@ jobs:
     needs: [generate-provenance, verify-supply-chain, sbom-analysis]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Install OPA (Open Policy Agent)
         run: |
-          curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/v0.71.0/opa_linux_amd64
+          curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/v1.8.0/opa_linux_amd64
           chmod +x opa
           sudo mv opa /usr/local/bin/
 
@@ -335,7 +335,7 @@ jobs:
 
       - name: Update compliance status
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const status = ${{ job.status == 'success' }} ? 'success' : 'failure';

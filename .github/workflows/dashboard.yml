@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Gather workflow metrics
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         id: metrics
         with:
           script: |
@@ -150,7 +150,7 @@ jobs:
           EOF
 
       - name: Create or update dashboard issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const dashboardContent = require('fs').readFileSync('WORKFLOW_DASHBOARD.md', 'utf8');

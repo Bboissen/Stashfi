@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Analyze workflow usage
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         id: usage
         with:
           script: |
@@ -214,7 +214,7 @@ jobs:
           EOF
 
       - name: Post cost report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const report = require('fs').readFileSync('cost-report.md', 'utf8');
