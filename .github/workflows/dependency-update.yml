@@ -22,12 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6.0.0
         with:
           go-version: '1.25.0'
 
@@ -91,7 +91,7 @@ jobs:
 
       - name: Create Pull Request for Go updates
         if: steps.update-go.outputs.has-updates == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v7.0.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore(deps): update Go dependencies'
@@ -128,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Check and update Docker base images
         id: update-docker
@@ -217,7 +217,7 @@ jobs:
 
       - name: Create Pull Request for Docker updates
         if: steps.update-docker.outputs.has-updates == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v7.0.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore(deps): update Docker base images'
@@ -254,10 +254,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Update GitHub Actions
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v4.7.3
         with:
           config-file: dependency-review-config.yml
 
@@ -281,10 +281,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v4.3.1
+        with:
+          version: 3.18.6
 
       - name: Add Helm repositories
         run: |
@@ -340,7 +342,7 @@ jobs:
 
       - name: Create PR for Helm updates
         if: steps.helm-updates.outputs.has-updates == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v7.0.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore(deps): update Helm chart dependencies'
@@ -369,7 +371,7 @@ jobs:
     if: always()
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Trigger security scan workflow
         run: |
@@ -392,10 +394,10 @@ jobs:
     if: always()
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5.0.0
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.20.5
         with:
           path: ./services/api-gateway
           format: spdx-json
@@ -415,11 +417,11 @@ jobs:
 
           ## Docker Base Images
           ### Golang
-          - Current: golang:1.25-alpine3.21
+          - Current: golang:1.25-alpine3.22
           - Latest: Check Docker Hub
 
           ### Alpine
-          - Current: alpine:3.21
+          - Current: alpine:3.22
           - Latest: Check Docker Hub
 
           ## Helm Charts
@@ -442,7 +444,7 @@ jobs:
           EOF
 
       - name: Upload reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         if: ${{ !env.ACT }}  # Skip when running locally with act
         with:
           name: dependency-reports
