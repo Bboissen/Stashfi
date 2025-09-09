@@ -1,0 +1,151 @@
+name: Reusable Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'Primary language (go, javascript, python)'
+        type: string
+        default: 'go'
+      scan_path:
+        description: 'Path to scan'
+        type: string
+        default: '.'
+      run_gosec:
+        description: 'Run Gosec scanner (Go only)'
+        type: boolean
+        default: true
+      run_semgrep:
+        description: 'Run Semgrep scanner'
+        type: boolean
+        default: true
+      run_codeql:
+        description: 'Run CodeQL analysis'
+        type: boolean
+        default: true
+      run_trivy:
+        description: 'Run Trivy filesystem scan'
+        type: boolean
+        default: true
+      run_gitleaks:
+        description: 'Run Gitleaks secret scan'
+        type: boolean
+        default: true
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/bboissen/ci-toolbox:24.04
+      options: --user root
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Run Gitleaks secret scan
+        if: inputs.run_gitleaks
+        run: |
+          echo "🔍 Scanning for secrets with Gitleaks..."
+          gitleaks detect \
+            --source ${{ inputs.scan_path }} \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --verbose || true
+
+      - name: Upload Gitleaks results
+        if: inputs.run_gitleaks && always()
+        uses: github/codeql-action/upload-sarif@v3.30.0
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+      - name: Run Gosec Security Scanner
+        if: inputs.run_gosec && inputs.language == 'go'
+        run: |
+          echo "🔍 Running Gosec security scanner..."
+          gosec -fmt sarif -out gosec.sarif -severity medium ${{ inputs.scan_path }}/... || true
+
+      - name: Upload Gosec results
+        if: inputs.run_gosec && inputs.language == 'go' && always()
+        uses: github/codeql-action/upload-sarif@v3.30.0
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      - name: Run Semgrep
+        if: inputs.run_semgrep
+        run: |
+          echo "🔍 Running Semgrep security analysis..."
+          # Language-specific rules
+          LANG_CONFIG=""
+          case "${{ inputs.language }}" in
+            go)
+              LANG_CONFIG="--config p/golang"
+              ;;
+            javascript|typescript)
+              LANG_CONFIG="--config p/javascript --config p/typescript"
+              ;;
+            python)
+              LANG_CONFIG="--config p/python"
+              ;;
+          esac
+
+          docker run --rm -v "$PWD:/src" \
+            returntocorp/semgrep:latest \
+            semgrep \
+              --config p/security-audit \
+              --config p/owasp-top-ten \
+              --config p/kubernetes \
+              --config p/docker \
+              $LANG_CONFIG \
+              --sarif -o /src/semgrep.sarif \
+              ${{ inputs.scan_path }} || true
+
+      - name: Upload Semgrep results
+        if: inputs.run_semgrep && always()
+        uses: github/codeql-action/upload-sarif@v3.30.0
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Run Trivy filesystem scan
+        if: inputs.run_trivy
+        run: |
+          echo "🔍 Running Trivy vulnerability scan..."
+          trivy fs ${{ inputs.scan_path }} \
+            --format sarif \
+            --output trivy-fs.sarif \
+            --severity CRITICAL,HIGH,MEDIUM \
+            --scanners vuln,misconfig,secret
+
+      - name: Upload Trivy results
+        if: inputs.run_trivy && always()
+        uses: github/codeql-action/upload-sarif@v3.30.0
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+      - name: Initialize CodeQL
+        if: inputs.run_codeql
+        uses: github/codeql-action/init@v3.30.0
+        with:
+          languages: ${{ inputs.language }}
+          queries: security-and-quality
+
+      - name: Autobuild
+        if: inputs.run_codeql
+        uses: github/codeql-action/autobuild@v3.30.0
+
+      - name: Perform CodeQL Analysis
+        if: inputs.run_codeql
+        uses: github/codeql-action/analyze@v3.30.0
+        with:
+          category: codeql-${{ inputs.language }}

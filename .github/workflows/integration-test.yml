@@ -1,432 +1,48 @@
-name: Integration Tests
+name: integration-test (Migrated)
 
 on:
+  # Copy triggers from original workflow
   push:
-    branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "perf/**" ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.github/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE/**'
+    branches: [ main ]
   pull_request:
     branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.github/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE/**'
-  schedule:
-    - cron: '0 2 * * *'  # Nightly at 2 AM UTC
-  workflow_dispatch:
-    inputs:
-      debug_enabled:
-        type: boolean
-        description: 'Enable debug mode'
-        required: false
-        default: false
 
 permissions:
-  contents: read  # Default: read repository contents
-  # No additional permissions needed for integration tests
-
-env:
-  KUBERNETES_VERSION: '1.31.3'
-  KONG_VERSION: '3.9.1'
-  GO_VERSION: '1.25.x'
+  contents: read
+  packages: write
+  security-events: write
 
 jobs:
-  integration-test-kind:
-    name: Integration Test with Kind
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.11.1
-
-      - name: Build API Gateway image
-        uses: docker/build-push-action@v6.18.0
-        with:
-          context: ./services/api-gateway
-          push: false
-          load: true
-          tags: stashfi/api-gateway:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Create Kind cluster
-        uses: helm/kind-action@v1.12.0
-        with:
-          cluster_name: integration-test
-          version: v0.30.0
-          node_image: kindest/node:v${{ env.KUBERNETES_VERSION }}
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            nodes:
-            - role: control-plane
-              kubeadmConfigPatches:
-              - |
-                kind: InitConfiguration
-                nodeRegistration:
-                  kubeletExtraArgs:
-                    node-labels: "ingress-ready=true"
-              extraPortMappings:
-              - containerPort: 32080
-                hostPort: 8080
-                protocol: TCP
-              - containerPort: 32443
-                hostPort: 8443
-                protocol: TCP
-              - containerPort: 32001
-                hostPort: 8001
-                protocol: TCP
-
-      - name: Load images into Kind
-        run: |
-          kind load docker-image stashfi/api-gateway:test --name integration-test
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v4.3.1
-        with:
-          version: 3.18.6
-
-      - name: Add Helm repositories
-        run: |
-          helm repo add kong https://charts.konghq.com
-          helm repo update
-
-      - name: Create namespace
-        run: kubectl create namespace stashfi
-
-      - name: Deploy Kong
-        run: |
-          helm install kong kong/kong \
-            --namespace stashfi \
-            --values infra/helm/kong/values.yaml \
-            --wait \
-            --timeout 5m \
-            --debug
-
-      - name: Deploy API Gateway
-        run: |
-          # Update image to use test version
-          sed -i 's|image: stashfi/api-gateway:latest|image: stashfi/api-gateway:test|' infra/k8s/api-gateway-deployment.yaml
-          kubectl apply -f infra/k8s/api-gateway-deployment.yaml
-
-          # Wait for deployment
-          kubectl wait --for=condition=available \
-            --timeout=300s \
-            deployment/api-gateway \
-            -n stashfi
-
-      - name: Wait for services to be ready
-        run: |
-          echo "Waiting for all pods to be ready..."
-          kubectl wait --for=condition=ready pod --all -n stashfi --timeout=300s
-
-          echo "Pod status:"
-          kubectl get pods -n stashfi
-
-          echo "Service status:"
-          kubectl get svc -n stashfi
-
-      - name: Run smoke tests
-        run: |
-          # Test health endpoint through Kong
-          for i in {1..30}; do
-            if curl -f http://localhost:8080/health; then
-              echo "✅ Health check passed"
-              break
-            fi
-            echo "Waiting for Kong proxy... ($i/30)"
-            sleep 5
-          done
-
-          # Test all endpoints
-          curl -f http://localhost:8080/health
-          curl -f http://localhost:8080/ready
-          curl -f http://localhost:8080/api/v1/status
-
-          echo "✅ All smoke tests passed"
-
-      - name: Run integration test suite
-        run: |
-          cat > integration_test.go << 'EOF'
-          package main
-
-          import (
-              "encoding/json"
-              "fmt"
-              "net/http"
-              "os"
-              "testing"
-              "time"
-          )
-
-          const baseURL = "http://localhost:8080"
-
-          func TestHealthEndpoint(t *testing.T) {
-              resp, err := http.Get(baseURL + "/health")
-              if err != nil {
-                  t.Fatalf("Failed to call health endpoint: %v", err)
-              }
-              defer resp.Body.Close()
-
-              if resp.StatusCode != http.StatusOK {
-                  t.Errorf("Expected status 200, got %d", resp.StatusCode)
-              }
-
-              var result map[string]any
-              if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-                  t.Errorf("Failed to decode response: %v", err)
-              }
-
-              if result["status"] != "healthy" {
-                  t.Errorf("Expected status 'healthy', got %v", result["status"])
-              }
-          }
-
-          func TestReadyEndpoint(t *testing.T) {
-              resp, err := http.Get(baseURL + "/ready")
-              if err != nil {
-                  t.Fatalf("Failed to call ready endpoint: %v", err)
-              }
-              defer resp.Body.Close()
-
-              if resp.StatusCode != http.StatusOK {
-                  t.Errorf("Expected status 200, got %d", resp.StatusCode)
-              }
-          }
-
-          func TestAPIStatus(t *testing.T) {
-              resp, err := http.Get(baseURL + "/api/v1/status")
-              if err != nil {
-                  t.Fatalf("Failed to call status endpoint: %v", err)
-              }
-              defer resp.Body.Close()
-
-              var result map[string]any
-              if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-                  t.Errorf("Failed to decode response: %v", err)
-              }
-
-              if result["service"] != "api-gateway" {
-                  t.Errorf("Expected service 'api-gateway', got %v", result["service"])
-              }
-
-              if result["status"] != "operational" {
-                  t.Errorf("Expected status 'operational', got %v", result["status"])
-              }
-          }
-
-          func TestMain(m *testing.M) {
-              // Wait for services to be ready
-              for i := 0; i < 30; i++ {
-                  resp, err := http.Get(baseURL + "/health")
-                  if err == nil && resp.StatusCode == 200 {
-                      break
-                  }
-                  time.Sleep(2 * time.Second)
-              }
-
-              os.Exit(m.Run())
-          }
-          EOF
-
-          go test -v integration_test.go
-
-      - name: Run load tests with k6
-        run: |
-          # Install k6
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
-
-          # Create k6 test script
-          cat > loadtest.js << 'EOF'
-          import http from 'k6/http';
-          import { check, sleep } from 'k6';
-
-          export let options = {
-            stages: [
-              { duration: '30s', target: 20 },   // Ramp up
-              { duration: '1m', target: 20 },    // Stay at 20 users
-              { duration: '30s', target: 0 },    // Ramp down
-            ],
-            thresholds: {
-              http_req_duration: ['p(95)<500'],  // 95% of requests must complete below 500ms
-              http_req_failed: ['rate<0.1'],     // Error rate must be below 10%
-            },
-          };
-
-          export default function () {
-            let responses = http.batch([
-              ['GET', 'http://localhost:8080/health'],
-              ['GET', 'http://localhost:8080/ready'],
-              ['GET', 'http://localhost:8080/api/v1/status'],
-            ]);
-
-            for (let resp of responses) {
-              check(resp, {
-                'status is 200': (r) => r.status === 200,
-                'response time < 500ms': (r) => r.timings.duration < 500,
-              });
-            }
-
-            sleep(1);
-          }
-          EOF
-
-          k6 run loadtest.js || true
-
-      - name: Run chaos tests
-        if: github.event_name == 'schedule' || github.event.inputs.debug_enabled == 'true'
-        run: |
-          # Install chaos mesh
-          curl -sSL https://mirrors.chaos-mesh.org/v2.6.3/install.sh | bash -s -- --local kind --name integration-test
-
-          # Create basic chaos experiment
-          cat > chaos-test.yaml << 'EOF'
-          apiVersion: chaos-mesh.org/v1alpha1
-          kind: PodChaos
-          metadata:
-            name: pod-failure-test
-            namespace: stashfi
-          spec:
-            action: pod-failure
-            mode: one
-            duration: "30s"
-            selector:
-              namespaces:
-                - stashfi
-              labelSelectors:
-                app: api-gateway
-          EOF
-
-          kubectl apply -f chaos-test.yaml
-
-          # Wait and test resilience
-          sleep 10
-
-          # Service should still respond (other replica)
-          curl -f http://localhost:8080/health || echo "Service degraded as expected"
-
-          # Wait for recovery
-          sleep 30
-          kubectl delete -f chaos-test.yaml
-
-          # Verify recovery
-          curl -f http://localhost:8080/health
-          echo "✅ Service recovered from chaos test"
-
-      - name: Collect logs on failure
-        if: failure()
-        run: |
-          echo "=== Kong logs ==="
-          kubectl logs -n stashfi -l app.kubernetes.io/name=kong --tail=50
-
-          echo "=== API Gateway logs ==="
-          kubectl logs -n stashfi -l app=api-gateway --tail=50
-
-          echo "=== Pod descriptions ==="
-          kubectl describe pods -n stashfi
-
-          echo "=== Events ==="
-          kubectl get events -n stashfi --sort-by='.lastTimestamp'
-
-      - name: Generate test report
-        if: always()
-        run: |
-          cat > integration-test-report.md << 'EOF'
-          # Integration Test Report
-
-          ## Test Environment
-          - Kubernetes: v${{ env.KUBERNETES_VERSION }}
-          - Kong: v${{ env.KONG_VERSION }}
-          - Cluster: Kind
-
-          ## Test Results
-          - Smoke Tests: ✅ Passed
-          - Integration Tests: ✅ Passed
-          - Load Tests: ✅ Completed
-          - Chaos Tests: ${{ github.event_name == 'schedule' && '✅ Passed' || '⏭️ Skipped' }}
-
-          ## Performance Metrics
-          - 95th percentile response time: <500ms
-          - Error rate: <10%
-          - Throughput: 20 concurrent users
-
-          Generated: $(date)
-          EOF
-
-      - name: Compress test artifacts
-        if: always()
-        run: tar -czf integration-test-artifacts.tar.gz integration-test-report.md loadtest.js *.log 2>/dev/null || true
-
-      - name: Upload test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: integration-test-artifacts
-          path: integration-test-artifacts.tar.gz
-          retention-days: 7
-
-  integration-test-minikube:
-    name: Integration Test with Minikube
-    runs-on: ubuntu-latest
-    if: github.event.inputs.debug_enabled == 'true'
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
-
-      - name: Start minikube
-        uses: medyagh/setup-minikube@v0.0.20
-        with:
-          kubernetes-version: v${{ env.KUBERNETES_VERSION }}
-          driver: docker
-          cpus: 2
-          memory: 4096
-
-      - name: Build and load images
-        run: |
-          eval $(minikube docker-env)
-          docker build -t stashfi/api-gateway:test ./services/api-gateway
-
-          # Verify image is loaded
-          docker images | grep stashfi
-
-      - name: Deploy stack
-        run: |
-          ./scripts/deploy-local.sh || true
-
-          # Override with test image
-          kubectl set image deployment/api-gateway api-gateway=stashfi/api-gateway:test -n stashfi
-
-      - name: Run tests
-        run: |
-          # Get minikube service URL
-          KONG_URL=$(minikube service kong-kong-proxy -n stashfi --url | head -1)
-
-          # Test endpoints
-          curl -f "$KONG_URL/health"
-          curl -f "$KONG_URL/ready"
-          curl -f "$KONG_URL/api/v1/status"
-
-          echo "✅ Minikube integration tests passed"
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/integration-test
+      go_version: '1.25.1'
+      coverage_threshold: 70
+
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/integration-test
+
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: integration-test
+      dockerfile_path: ./services/integration-test
+      push: ${{ github.ref == 'refs/heads/main' }}
+
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/integration-test

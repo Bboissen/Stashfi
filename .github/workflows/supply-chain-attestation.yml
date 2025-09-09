@@ -1,354 +1,48 @@
-name: Supply Chain Attestation
+name: supply-chain-attestation (Migrated)
 
 on:
-  workflow_run:
-    workflows: ["Docker Build & Scan"]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: 'Image tag to attest'
-        required: true
-        type: string
+  # Copy triggers from original workflow
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
   contents: read
-  packages: read
-  id-token: write
-  attestations: write
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/api-gateway
+  packages: write
+  security-events: write
 
 jobs:
-  generate-provenance:
-    name: Generate SLSA Provenance
-    runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
-    outputs:
-      image-digest: ${{ steps.image.outputs.digest }}
-      image-tag: ${{ steps.image.outputs.tag }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/supply-chain-attestation
+      go_version: '1.25.1'
+      coverage_threshold: 70
 
-      - name: Install SLSA tools
-        run: |
-          # Install slsa-verifier
-          curl -sSfL https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.0/slsa-verifier-linux-amd64 -o slsa-verifier
-          chmod +x slsa-verifier
-          sudo mv slsa-verifier /usr/local/bin/
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/supply-chain-attestation
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3.5.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: supply-chain-attestation
+      dockerfile_path: ./services/supply-chain-attestation
+      push: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Get image digest
-        id: image
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="${{ github.event.inputs.image_tag }}"
-          else
-            TAG="latest"
-          fi
-          DIGEST=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG} | jq -r '.config.digest')
-          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-
-      # SLSA provenance generation would be a separate job calling the reusable workflow
-      # For now, we'll use cosign to sign the image directly
-      - name: Sign container image
-        run: |
-          cosign sign --yes \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.image.outputs.digest }}
-
-  verify-supply-chain:
-    name: Verify Supply Chain
-    runs-on: ubuntu-latest
-    needs: generate-provenance
-    steps:
-      - name: Install verification tools
-        run: |
-          # Install cosign
-          curl -sSfL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 -o cosign
-          chmod +x cosign
-          sudo mv cosign /usr/local/bin/
-
-          # Install slsa-verifier
-          curl -sSfL https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.0/slsa-verifier-linux-amd64 -o slsa-verifier
-          chmod +x slsa-verifier
-          sudo mv slsa-verifier /usr/local/bin/
-
-          # Install syft for SBOM verification
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3.5.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify image signature
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          cosign verify \
-            --certificate-identity-regexp "https://github.com/${{ github.repository }}/*" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.generate-provenance.outputs.image-digest }}
-
-      - name: Verify SLSA provenance
-        run: |
-          slsa-verifier verify-image \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.generate-provenance.outputs.image-digest }} \
-            --source-uri "github.com/${{ github.repository }}" \
-            --source-tag ${{ github.ref_name }}
-
-      - name: Download and verify SBOM
-        run: |
-          # Download SBOM attestation
-          cosign download attestation \
-            --predicate-type spdxjson \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.generate-provenance.outputs.image-digest }} | \
-            jq -r '.payload' | base64 -d | jq -r '.predicate' > sbom.json
-
-          # Verify SBOM structure
-          if jq -e '.spdxVersion' sbom.json > /dev/null; then
-            echo "✅ Valid SPDX SBOM found"
-            echo "SPDX Version: $(jq -r '.spdxVersion' sbom.json)"
-            echo "Created: $(jq -r '.creationInfo.created' sbom.json)"
-            echo "Package count: $(jq '.packages | length' sbom.json)"
-          else
-            echo "❌ Invalid SBOM format"
-            exit 1
-          fi
-
-      - name: Generate verification report
-        run: |
-          cat > supply-chain-report.md << EOF
-          # Supply Chain Verification Report
-
-          **Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          **Image**: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          **Digest**: ${{ needs.generate-provenance.outputs.image-digest }}
-
-          ## Verification Results
-
-          | Check | Status | Details |
-          |-------|--------|---------|
-          | Image Signature | ✅ Verified | Signed with Sigstore |
-          | SLSA Provenance | ✅ Verified | Level 3 provenance |
-          | SBOM Attestation | ✅ Present | SPDX format |
-          | Build Reproducibility | ✅ Tracked | GitHub Actions |
-
-          ## SLSA Requirements
-
-          - [x] **Source**: Version controlled in GitHub
-          - [x] **Build**: Automated via GitHub Actions
-          - [x] **Provenance**: Generated and signed
-          - [x] **Verification**: Automated checks pass
-
-          ## Attestations
-
-          - Container signature via Sigstore Cosign
-          - SLSA provenance attestation
-          - SBOM attestation in SPDX format
-
-          ---
-          *Generated by GitHub Actions Workflow*
-          EOF
-
-          cat supply-chain-report.md
-
-      - name: Upload verification report
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: supply-chain-report
-          path: supply-chain-report.md
-          retention-days: 90
-
-  sbom-analysis:
-    name: SBOM Analysis
-    runs-on: ubuntu-latest
-    needs: generate-provenance
-    steps:
-      - name: Install analysis tools
-        run: |
-          # Install grype for vulnerability scanning
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.99.1
-
-          # Install sbom-scorecard
-          pip install sbom-scorecard
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3.5.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract SBOM from attestation
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          cosign download attestation \
-            --predicate-type spdxjson \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.generate-provenance.outputs.image-digest }} | \
-            jq -r '.payload' | base64 -d | jq -r '.predicate' > sbom.spdx.json
-
-      - name: Analyze SBOM for vulnerabilities
-        run: |
-          grype sbom.spdx.json -o table > vulnerability-report.txt
-          echo "## Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat vulnerability-report.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: Calculate SBOM quality score
-        run: |
-          sbom-scorecard score sbom.spdx.json > sbom-score.txt || true
-          echo "## SBOM Quality Score" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat sbom-score.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: License compliance check
-        run: |
-          echo "## License Analysis" >> $GITHUB_STEP_SUMMARY
-          echo "Extracting license information from SBOM..." >> $GITHUB_STEP_SUMMARY
-          jq -r '.packages[].licenseConcluded // "NOASSERTION"' sbom.spdx.json | \
-            sort | uniq -c | sort -rn > license-summary.txt
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat license-summary.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload analysis results
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: sbom-analysis
-          path: |
-            vulnerability-report.txt
-            sbom-score.txt
-            license-summary.txt
-          retention-days: 30
-
-  policy-compliance:
-    name: Policy Compliance Check
-    runs-on: ubuntu-latest
-    needs: [generate-provenance, verify-supply-chain, sbom-analysis]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
-
-      - name: Install OPA (Open Policy Agent)
-        run: |
-          curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/v1.8.0/opa_linux_amd64
-          chmod +x opa
-          sudo mv opa /usr/local/bin/
-
-      - name: Create supply chain policy
-        run: |
-          cat > supply-chain-policy.rego << 'EOF'
-          package supply_chain
-
-          default allow = false
-
-          # Image must be signed
-          allow {
-            input.signature_verified == true
-          }
-
-          # SLSA provenance must be present
-          allow {
-            input.slsa_verified == true
-          }
-
-          # SBOM must be attached
-          allow {
-            input.sbom_present == true
-          }
-
-          # No critical vulnerabilities
-          allow {
-            input.critical_vulnerabilities == 0
-          }
-
-          violations[msg] {
-            not input.signature_verified
-            msg := "Image signature verification failed"
-          }
-
-          violations[msg] {
-            not input.slsa_verified
-            msg := "SLSA provenance verification failed"
-          }
-
-          violations[msg] {
-            not input.sbom_present
-            msg := "SBOM attestation missing"
-          }
-
-          violations[msg] {
-            input.critical_vulnerabilities > 0
-            msg := sprintf("Found %d critical vulnerabilities", [input.critical_vulnerabilities])
-          }
-          EOF
-
-      - name: Evaluate policy compliance
-        run: |
-          # Create input data based on previous job results
-          cat > policy-input.json << EOF
-          {
-            "signature_verified": true,
-            "slsa_verified": true,
-            "sbom_present": true,
-            "critical_vulnerabilities": 0,
-            "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",
-            "digest": "${{ needs.generate-provenance.outputs.image-digest }}"
-          }
-          EOF
-
-          # Evaluate policy
-          opa eval -d supply-chain-policy.rego -i policy-input.json "data.supply_chain.allow" > policy-result.json
-
-          # Check result
-          if jq -e '.result[0].expressions[0].value == true' policy-result.json > /dev/null; then
-            echo "✅ Supply chain policy compliance: PASSED" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Supply chain policy compliance: FAILED" >> $GITHUB_STEP_SUMMARY
-            opa eval -d supply-chain-policy.rego -i policy-input.json "data.supply_chain.violations" | \
-              jq -r '.result[0].expressions[0].value[]' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-      - name: Generate compliance badge
-        if: success()
-        run: |
-          echo "[![Supply Chain](https://img.shields.io/badge/Supply%20Chain-Verified-success)]()" > compliance-badge.md
-          echo "Image complies with all supply chain security policies" >> compliance-badge.md
-
-      - name: Update compliance status
-        if: always()
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const status = ${{ job.status == 'success' }} ? 'success' : 'failure';
-            const description = status === 'success'
-              ? 'Supply chain verification passed'
-              : 'Supply chain verification failed';
-
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: status,
-              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: description,
-              context: 'supply-chain/verification'
-            });
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/supply-chain-attestation

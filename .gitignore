@@ -220,3 +220,19 @@ claude.md
 # database
 *.sql
 *.dbdiagram
+
+# Act local secrets and variables (never commit these)
+.secrets
+.vars
+
+# backup
+.github/workflows/backup-*
+*.bk
+*.backup
+*.backup.yaml
+*.backup.yml
+*.backup.json
+*.backup.toml
+*.backup.xml
+*.backup.yaml.backup
+*.backup.yml.backup

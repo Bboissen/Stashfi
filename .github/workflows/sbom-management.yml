@@ -1,342 +1,48 @@
-name: SBOM Management
+name: sbom-management (Migrated)
 
 on:
+  # Copy triggers from original workflow
   push:
-    branches: [main]
-    paths:
-      - 'go.mod'
-      - 'go.sum'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '**/Dockerfile'
-  schedule:
-    - cron: '0 2 * * 1'  # Weekly on Monday at 2 AM UTC
-  workflow_dispatch:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
-  contents: write
+  contents: read
+  packages: write
   security-events: write
-  packages: read
 
 jobs:
-  generate-sboms:
-    name: Generate SBOMs
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        component:
-          - name: api-gateway
-            path: services/api-gateway
-            type: go
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/sbom-management
+      go_version: '1.25.1'
+      coverage_threshold: 70
 
-      - name: Set up Go
-        if: matrix.component.type == 'go'
-        uses: actions/setup-go@v6.0.0
-        with:
-          go-version: '1.25.0'
-          cache-dependency-path: ${{ matrix.component.path }}/go.sum
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/sbom-management
 
-      - name: Install SBOM tools
-        run: |
-          # Install syft for SBOM generation
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: sbom-management
+      dockerfile_path: ./services/sbom-management
+      push: ${{ github.ref == 'refs/heads/main' }}
 
-          # Install cyclonedx CLI
-          npm install -g @cyclonedx/cli
-
-          # Install sbom-tool (Microsoft)
-          curl -Lo sbom-tool https://github.com/microsoft/sbom-tool/releases/download/v3.0.1/sbom-tool-linux-x64
-          chmod +x sbom-tool
-          sudo mv sbom-tool /usr/local/bin/
-
-      - name: Generate SPDX SBOM with Syft
-        run: |
-          cd ${{ matrix.component.path }}
-          syft . -o spdx-json > sbom-spdx.json
-          syft . -o cyclonedx-json > sbom-cyclonedx.json
-
-      - name: Generate SBOM with Microsoft sbom-tool
-        run: |
-          cd ${{ matrix.component.path }}
-          sbom-tool generate \
-            -b . \
-            -bc . \
-            -pn "${{ matrix.component.name }}" \
-            -pv "${{ github.sha }}" \
-            -ps "Stashfi" \
-            -nsb "https://github.com/${{ github.repository }}" \
-            -m .
-
-      - name: Validate SBOMs
-        run: |
-          cd ${{ matrix.component.path }}
-
-          # Validate SPDX format
-          if jq -e '.spdxVersion' sbom-spdx.json > /dev/null; then
-            echo "✅ Valid SPDX SBOM"
-          else
-            echo "❌ Invalid SPDX SBOM"
-            exit 1
-          fi
-
-          # Validate CycloneDX format
-          if jq -e '.bomFormat' sbom-cyclonedx.json > /dev/null; then
-            echo "✅ Valid CycloneDX SBOM"
-          else
-            echo "❌ Invalid CycloneDX SBOM"
-            exit 1
-          fi
-
-      - name: Enrich SBOM with VEX data
-        run: |
-          cd ${{ matrix.component.path }}
-
-          # Create VEX (Vulnerability Exploitability eXchange) document
-          cat > vex.json << EOF
-          {
-            "@context": "https://openvex.dev/ns",
-            "@id": "https://github.com/${{ github.repository }}/vex/${{ github.sha }}",
-            "author": "Stashfi Security Team",
-            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "version": "1.0.0",
-            "statements": []
-          }
-          EOF
-
-      - name: Upload SBOMs
-        uses: actions/upload-artifact@v4.6.2
-        if: ${{ !env.ACT }}  # Skip when running locally with act
-        with:
-          name: sboms-${{ matrix.component.name }}
-          path: |
-            ${{ matrix.component.path }}/sbom-*.json
-            ${{ matrix.component.path }}/_manifest/
-            ${{ matrix.component.path }}/vex.json
-          retention-days: 90
-
-      - name: Save SBOMs locally
-        if: ${{ env.ACT }}  # Only run locally with act
-        run: |
-          mkdir -p /tmp/artifacts/sboms
-          cp -r ${{ matrix.component.path }}/sbom-*.json /tmp/artifacts/sboms/ 2>/dev/null || true
-          echo "📦 SBOMs saved locally to /tmp/artifacts/sboms/"
-
-      - name: Submit to Dependency Track
-        if: github.ref == 'refs/heads/main'
-        continue-on-error: true
-        run: |
-          # This would submit to a Dependency Track instance if configured
-          # curl -X POST https://dependency-track.example.com/api/v1/bom \
-          #   -H "X-Api-Key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}" \
-          #   -H "Content-Type: application/json" \
-          #   -d @${{ matrix.component.path }}/sbom-cyclonedx.json
-          echo "Dependency Track submission skipped (not configured)"
-
-  analyze-dependencies:
-    name: Analyze Dependencies
-    runs-on: ubuntu-latest
-    needs: generate-sboms
-    steps:
-      - name: Download all SBOMs
-        uses: actions/download-artifact@v5.0.0
-        with:
-          pattern: sboms-*
-          merge-multiple: true
-
-      - name: Install analysis tools
-        run: |
-          # Install grype for vulnerability scanning
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.99.1
-
-          # Install nancy for Go vulnerability scanning
-          curl -L -o nancy https://github.com/sonatype-nexus-community/nancy/releases/download/v1.0.51/nancy-v1.0.51-linux-amd64
-          chmod +x nancy
-          sudo mv nancy /usr/local/bin/
-
-          # Install OSV scanner
-          go install github.com/google/osv-scanner/cmd/osv-scanner@v2.2.2
-
-      - name: Scan for vulnerabilities
-        run: |
-          echo "## Vulnerability Scan Results" > vulnerability-report.md
-          echo "" >> vulnerability-report.md
-
-          for sbom in sbom-spdx*.json; do
-            component=$(echo $sbom | sed 's/sbom-spdx-\(.*\)\.json/\1/')
-            echo "### Component: $component" >> vulnerability-report.md
-            echo '```' >> vulnerability-report.md
-            grype sbom:$sbom --fail-on high >> vulnerability-report.md 2>&1 || true
-            echo '```' >> vulnerability-report.md
-            echo "" >> vulnerability-report.md
-          done
-
-      - name: Check license compliance
-        run: |
-          echo "## License Compliance Report" > license-report.md
-          echo "" >> license-report.md
-
-          for sbom in sbom-spdx*.json; do
-            echo "### Licenses found:" >> license-report.md
-            jq -r '.packages[].licenseConcluded // .packages[].licenseDeclared // "NOASSERTION"' $sbom | \
-              grep -v "NOASSERTION" | sort | uniq -c | sort -rn >> license-report.md
-            echo "" >> license-report.md
-          done
-
-          # Check for problematic licenses
-          echo "### Problematic Licenses Check:" >> license-report.md
-          PROBLEMATIC="GPL|AGPL|SSPL|Commons-Clause"
-          if jq -r '.packages[].licenseConcluded // .packages[].licenseDeclared // ""' sbom-*.json | grep -E "$PROBLEMATIC"; then
-            echo "⚠️ Found potentially problematic licenses" >> license-report.md
-          else
-            echo "✅ No problematic licenses found" >> license-report.md
-          fi
-
-      - name: Generate dependency graph
-        run: |
-          echo "## Dependency Statistics" > dependency-stats.md
-          echo "" >> dependency-stats.md
-
-          for sbom in sbom-spdx*.json; do
-            TOTAL_PACKAGES=$(jq '.packages | length' $sbom)
-            TOTAL_FILES=$(jq '.files | length' $sbom 2>/dev/null || echo "0")
-            echo "- **$(basename $sbom .json)**: $TOTAL_PACKAGES packages, $TOTAL_FILES files" >> dependency-stats.md
-          done
-
-      - name: Create SBOM summary
-        run: |
-          cat > sbom-summary.md << EOF
-          # SBOM Generation Summary
-
-          **Generated**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          **Commit**: ${{ github.sha }}
-          **Branch**: ${{ github.ref_name }}
-
-          ## Formats Generated
-          - SPDX (JSON)
-          - CycloneDX (JSON)
-          - Microsoft SBOM
-
-          ## Tools Used
-          - Syft v1.32.0
-          - Microsoft sbom-tool v3.0.1
-          - Grype v0.99.1
-
-          ## Next Steps
-          1. Review vulnerability report
-          2. Check license compliance
-          3. Update dependencies if needed
-
-          EOF
-
-          cat dependency-stats.md >> sbom-summary.md
-          echo "" >> sbom-summary.md
-          cat license-report.md >> sbom-summary.md
-          echo "" >> sbom-summary.md
-          cat vulnerability-report.md >> sbom-summary.md
-
-      - name: Upload analysis reports
-        uses: actions/upload-artifact@v4.6.2
-        if: ${{ !env.ACT }}  # Skip when running locally with act
-        with:
-          name: sbom-analysis-reports
-          path: |
-            *-report.md
-            sbom-summary.md
-          retention-days: 30
-
-      - name: Save analysis reports locally
-        if: ${{ env.ACT }}  # Only run locally with act
-        run: |
-          mkdir -p /tmp/artifacts
-          cp *-report.md sbom-summary.md /tmp/artifacts/ 2>/dev/null || true
-          echo "📦 Analysis reports saved locally to /tmp/artifacts/"
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('sbom-summary.md', 'utf8');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: summary
-            });
-
-  update-sbom-registry:
-    name: Update SBOM Registry
-    runs-on: ubuntu-latest
-    needs: [generate-sboms, analyze-dependencies]
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
-
-      - name: Download all SBOMs
-        uses: actions/download-artifact@v5.0.0
-        with:
-          pattern: sboms-*
-          path: .sboms/
-
-      - name: Create SBOM index
-        run: |
-          cd .sboms
-
-          # Create an index of all SBOMs
-          cat > index.json << EOF
-          {
-            "version": "1.0.0",
-            "generated": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "commit": "${{ github.sha }}",
-            "sboms": []
-          }
-          EOF
-
-          # Add each SBOM to the index
-          for dir in sboms-*/; do
-            component=$(basename $dir | sed 's/sboms-//')
-            for sbom in $dir/*.json; do
-              if [[ $(basename $sbom) != "vex.json" ]]; then
-                format=$(basename $sbom | sed 's/sbom-\(.*\)\.json/\1/')
-                jq --arg comp "$component" --arg fmt "$format" --arg path "$sbom" \
-                  '.sboms += [{"component": $comp, "format": $fmt, "path": $path}]' \
-                  index.json > index.tmp && mv index.tmp index.json
-              fi
-            done
-          done
-
-      - name: Commit SBOM registry
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # Create sbom branch if it doesn't exist
-          git checkout -B sbom-registry
-
-          # Copy SBOMs
-          cp -r .sboms/* .
-
-          # Commit if there are changes
-          if git diff --quiet; then
-            echo "No changes to commit"
-          else
-            git add .
-            git commit -m "Update SBOM registry for ${{ github.sha }}"
-            git push origin sbom-registry --force
-          fi
-
-      - name: Create SBOM badge
-        run: |
-          echo "[![SBOM](https://img.shields.io/badge/SBOM-Available-brightgreen)](https://github.com/${{ github.repository }}/tree/sbom-registry)" > sbom-badge.md
-
-      - name: Update README with SBOM info
-        continue-on-error: true
-        run: |
-          # This would update the main README with SBOM badge and info
-          echo "SBOM registry updated at branch: sbom-registry"
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/sbom-management

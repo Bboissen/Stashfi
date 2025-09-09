@@ -20,7 +20,7 @@ This document tracks all versions used across the Stashfi project to ensure cons
 | Kong Helm Chart | 2.51.0  | Helm deployment     |
 | Helm            | 3.18.6  | Package management  |
 | Kind            | 0.30.0  | Local K8s testing   |
-| Minikube        | 1.35.0  | Local development   |
+| Minikube        | 1.36.0  | Local development   |
 
 ## GitHub Actions
 
@@ -45,6 +45,8 @@ This document tracks all versions used across the Stashfi project to ensure cons
 | Tool          | Version        | Purpose                |
 | ------------- | -------------- | ---------------------- |
 | Trivy         | action v0.33.1 | Container scanning     |
+| Docker Scout  | action v1      | Container scanning     |
+| Dockle        | v0.4.15        | Best-practices linting |
 | Snyk          | 0.4.0          | Vulnerability scanning |
 | Gitleaks      | 8.28.0         | Secret detection       |
 | TruffleHog    | 3.90.6         | Secret scanning        |
@@ -67,7 +69,6 @@ This document tracks all versions used across the Stashfi project to ensure cons
 | Polaris                  | 10.1.1  | K8s best practices     |
 | Datree                   | latest  | K8s policies           |
 | Dive                     | 0.13.1  | Container analysis     |
-| Container Structure Test | 1.19.3  | Container validation   |
 | Syft                     | 1.32.0  | SBOM generation        |
 | Grype                    | 0.99.1  | Vulnerability scanning |
 | Nancy                    | 1.0.51  | Go vulnerability check |
@@ -161,4 +162,4 @@ The `dependency-update.yml` workflow runs weekly to:
 - Staging deployment skipped for prereleases
 - Boolean inputs properly handled (not compared as strings)
 
-Last Updated: 2025-08-25
+Last Updated: 2025-09-09

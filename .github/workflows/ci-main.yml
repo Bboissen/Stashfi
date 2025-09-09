@@ -1,4 +1,4 @@
-name: dependency-update (Migrated)
+name: ci-main (Migrated)
 
 on:
   # Copy triggers from original workflow
@@ -18,7 +18,7 @@ jobs:
     name: Test
     uses: ./.github/workflows/_reusable-go-test.yml
     with:
-      service_path: ./services/dependency-update
+      service_path: ./services/ci-main
       go_version: '1.25.1'
       coverage_threshold: 70
 
@@ -28,7 +28,7 @@ jobs:
     uses: ./.github/workflows/_reusable-security-scan.yml
     with:
       language: go
-      scan_path: ./services/dependency-update
+      scan_path: ./services/ci-main
 
   # Example: Docker build
   docker:
@@ -36,8 +36,8 @@ jobs:
     needs: [test]
     uses: ./.github/workflows/_reusable-docker-build.yml
     with:
-      image_name: dependency-update
-      dockerfile_path: ./services/dependency-update
+      image_name: ci-main
+      dockerfile_path: ./services/ci-main
       push: ${{ github.ref == 'refs/heads/main' }}
 
   # Example: Helm validation
@@ -45,4 +45,4 @@ jobs:
     name: Helm
     uses: ./.github/workflows/_reusable-helm-validate.yml
     with:
-      chart_path: ./infra/helm/dependency-update
+      chart_path: ./infra/helm/ci-main

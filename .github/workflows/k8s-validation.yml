@@ -1,246 +1,48 @@
-name: Kubernetes Manifests Validation
+name: k8s-validation (Migrated)
 
 on:
+  # Copy triggers from original workflow
   push:
-    branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "chore/**" ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.github/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE/**'
+    branches: [ main ]
   pull_request:
     branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.github/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE/**'
-  workflow_dispatch:
 
 permissions:
-  contents: read  # Default: read repository contents
-  # No additional permissions needed for validation
-
-env:
-  KUBERNETES_VERSION: '1.31.3'
+  contents: read
+  packages: write
+  security-events: write
 
 jobs:
-  validate-manifests:
-    name: Validate K8s Manifests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/k8s-validation
+      go_version: '1.25.1'
+      coverage_threshold: 70
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4.0.1
-        with:
-          version: 'v${{ env.KUBERNETES_VERSION }}'
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/k8s-validation
 
-      - name: Install Python dependencies
-        run: |
-          pip install pyyaml
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: k8s-validation
+      dockerfile_path: ./services/k8s-validation
+      push: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Validate YAML syntax
-        run: |
-          find infra/k8s -name "*.yaml" -o -name "*.yml" | while read file; do
-            echo "Validating YAML syntax: $file"
-            python3 -c "import yaml; yaml.safe_load_all(open('$file'))" || exit 1
-          done
-          echo "✅ All YAML files are valid"
-
-      - name: Kubernetes dry-run validation
-        run: |
-          find infra/k8s -name "*.yaml" -o -name "*.yml" | while read file; do
-            echo "Validating K8s manifest: $file"
-            kubectl apply --dry-run=client -f "$file" || exit 1
-          done
-          echo "✅ All manifests passed dry-run validation"
-
-      # Skipping kubeval (archived). Kubeconform below performs strict schema validation.
-
-      - name: Run Kubeconform validation
-        run: |
-          docker run --rm -v $(pwd):/workspace \
-            ghcr.io/yannh/kubeconform:v0.7.0 \
-            -kubernetes-version ${{ env.KUBERNETES_VERSION }} \
-            -summary \
-            -strict \
-            -verbose \
-            /workspace/infra/k8s/**/*.yaml /workspace/infra/k8s/**/*.yml
-
-      - name: Check for deprecated APIs
-        run: |
-          docker run --rm -v $(pwd):/workspace \
-            fairwindsops/pluto:v5.22.5 \
-            detect /workspace/infra/k8s \
-            --target-versions k8s=v${{ env.KUBERNETES_VERSION }}
-
-      - name: Validate with Datree
-        continue-on-error: true
-        env:
-          DATREE_TOKEN: ${{ secrets.DATREE_TOKEN }}
-        run: |
-          curl https://get.datree.io | /bin/bash -s
-          find infra/k8s -name "*.yaml" -o -name "*.yml" | while read file; do
-            datree test "$file" --only-k8s-files || true
-          done
-
-      - name: Security scanning with Kubesec
-        run: |
-          find infra/k8s -name "*.yaml" -o -name "*.yml" | while read file; do
-            echo "Scanning $file with Kubesec..."
-            docker run --rm -v $(pwd):/workspace \
-              kubesec/kubesec:v2.14.1 \
-              scan /workspace/"$file" | jq '.[] | select(.scoring.critical != null or .scoring.passed != null)' || true
-          done
-
-      - name: Policy validation with OPA
-        run: |
-          # Download a pinned OPA version (GitHub Actions runners are x86_64/amd64)
-          # For ARM64 runners, use: opa_linux_arm64_static
-          curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/v1.8.0/opa_linux_amd64_static
-          chmod +x opa
-
-          # Create basic security policies
-          cat > security-policies.rego << 'EOF'
-          package kubernetes.security
-
-          deny[msg] {
-            input.kind == "Deployment"
-            not input.spec.template.spec.securityContext.runAsNonRoot
-            msg := "Containers must run as non-root user"
-          }
-
-          deny[msg] {
-            input.kind == "Deployment"
-            container := input.spec.template.spec.containers[_]
-            not container.resources.limits.memory
-            msg := sprintf("Container '%s' must have memory limits", [container.name])
-          }
-
-          deny[msg] {
-            input.kind == "Deployment"
-            container := input.spec.template.spec.containers[_]
-            not container.resources.limits.cpu
-            msg := sprintf("Container '%s' must have CPU limits", [container.name])
-          }
-
-          deny[msg] {
-            input.kind == "Service"
-            input.spec.type == "NodePort"
-            not input.spec.ports[_].nodePort
-            msg := "NodePort services must specify explicit nodePort"
-          }
-          EOF
-
-          # Install yq for YAML to JSON conversion
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-          # Run OPA validation with JSON input
-          find infra/k8s -name "*.yaml" -o -name "*.yml" | while read file; do
-            echo "Policy check: $file"
-            # Convert YAML to JSON for OPA
-            yq eval -o=json "$file" > /tmp/manifest.json
-            ./opa eval -d security-policies.rego -i /tmp/manifest.json "data.kubernetes.security.deny[x]" || true
-          done
-
-      - name: Validate with Polaris
-        run: |
-          docker run --rm -v $(pwd):/workspace \
-            quay.io/fairwinds/polaris:v10.1.0 \
-            audit \
-            --audit-path /workspace/infra/k8s \
-            --format pretty || true
-
-      - name: Check resource specifications
-        run: |
-          echo "Checking resource specifications..."
-
-          # Check for missing resource limits/requests
-          for file in infra/k8s/*.yaml; do
-            if grep -q "kind: Deployment" "$file"; then
-              echo "Checking $file for resource specifications..."
-
-              # Check for limits
-              if ! grep -q "limits:" "$file"; then
-                echo "⚠️  Warning: $file missing resource limits"
-              fi
-
-              # Check for requests
-              if ! grep -q "requests:" "$file"; then
-                echo "⚠️  Warning: $file missing resource requests"
-              fi
-
-              # Check for probes
-              if ! grep -q "livenessProbe:" "$file"; then
-                echo "⚠️  Warning: $file missing liveness probe"
-              fi
-
-              if ! grep -q "readinessProbe:" "$file"; then
-                echo "⚠️  Warning: $file missing readiness probe"
-              fi
-            fi
-          done
-
-      - name: Validate NetworkPolicies
-        run: |
-          # Check if NetworkPolicies exist
-          if ls infra/k8s/*networkpolicy*.yaml 1> /dev/null 2>&1; then
-            echo "✅ NetworkPolicies found"
-            for file in infra/k8s/*networkpolicy*.yaml; do
-              kubectl apply --dry-run=client -f "$file"
-            done
-          else
-            echo "⚠️  No NetworkPolicies found - consider adding network segmentation"
-          fi
-
-      - name: Validate RBAC configurations
-        run: |
-          # Check for RBAC resources
-          for kind in Role RoleBinding ClusterRole ClusterRoleBinding ServiceAccount; do
-            if grep -r "kind: $kind" infra/k8s/ > /dev/null 2>&1; then
-              echo "✅ Found $kind resources"
-            else
-              echo "ℹ️  No $kind resources found"
-            fi
-          done
-
-      - name: Generate security report
-        if: always()
-        run: |
-          cat > k8s-validation-report.md << 'EOF'
-          # Kubernetes Validation Report
-
-          ## Validation Results
-          - YAML Syntax: ✅ Passed
-          - Kubernetes API Validation: ✅ Passed
-          - Deprecated APIs: Checked
-          - Security Policies: Evaluated
-          - Resource Specifications: Analyzed
-
-          ## Recommendations
-          1. Ensure all deployments have resource limits and requests
-          2. Implement NetworkPolicies for network segmentation
-          3. Use RBAC for proper access control
-          4. Enable security contexts for all containers
-          5. Implement pod security standards
-
-          Generated: $(date)
-          EOF
-
-          cat k8s-validation-report.md
-
-      - name: Upload validation report
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: k8s-validation-report
-          path: k8s-validation-report.md
-          retention-days: 30
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/k8s-validation

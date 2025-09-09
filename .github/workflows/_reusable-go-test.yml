@@ -1,0 +1,110 @@
+name: Reusable Go Test
+
+on:
+  workflow_call:
+    inputs:
+      service_path:
+        description: 'Path to Go service'
+        type: string
+        default: '.'
+      go_version:
+        description: 'Go version'
+        type: string
+        default: '1.25.1'
+      run_integration:
+        description: 'Run integration tests'
+        type: boolean
+        default: false
+      coverage_threshold:
+        description: 'Minimum coverage percentage'
+        type: number
+        default: 70
+
+jobs:
+  test:
+    name: Go Test & Lint
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/bboissen/ci-toolbox:24.04
+      options: --user root
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', inputs.service_path)) }}
+          restore-keys: |
+            go-${{ runner.os }}-
+
+      - name: Check Go formatting
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "❌ Go code is not formatted. Run 'gofmt -w .' to fix."
+            gofmt -d .
+            exit 1
+          fi
+          echo "✅ Go code is properly formatted"
+
+      - name: Run go vet
+        working-directory: ${{ inputs.service_path }}
+        run: go vet ./...
+
+      - name: Check go.mod tidiness
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "❌ go.mod or go.sum is not tidy"
+            git diff go.mod go.sum
+            exit 1
+          fi
+          echo "✅ go.mod is tidy"
+
+      - name: Run golangci-lint
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          if [ -f .golangci.yml ]; then
+            golangci-lint run --timeout=5m --config=.golangci.yml
+          else
+            golangci-lint run --timeout=5m
+          fi
+
+      - name: Run unit tests with coverage
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out
+
+      - name: Check coverage threshold
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage: ${COVERAGE}%"
+          THRESHOLD=${{ inputs.coverage_threshold }}
+          if [ $(echo "$COVERAGE < $THRESHOLD" | bc) -eq 1 ]; then
+            echo "Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "✅ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+
+      - name: Run integration tests
+        if: inputs.run_integration
+        working-directory: ${{ inputs.service_path }}
+        run: go test -v -race -tags=integration ./...
+
+      - name: Upload coverage
+        # Continue on error for local runs with act (no ACTIONS_RUNTIME_TOKEN)
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: coverage-${{ github.job }}
+          path: ${{ inputs.service_path }}/coverage.out
