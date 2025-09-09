@@ -1,381 +1,48 @@
-name: Cleanup and Maintenance
+name: cleanup (Migrated)
 
 on:
-  schedule:
-    - cron: '0 4 * * SUN'  # Weekly on Sunday at 4 AM UTC
-  workflow_dispatch:
-    inputs:
-      dry-run:
-        description: 'Dry run (no deletions)'
-        required: false
-        default: true
-        type: boolean
-      max-age-days:
-        description: 'Max age in days for artifacts'
-        required: false
-        default: '30'
-        type: string
+  # Copy triggers from original workflow
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
   packages: write
+  security-events: write
 
 jobs:
-  cleanup-artifacts:
-    name: Cleanup Old Artifacts
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete old artifacts
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const dryRun = ${{ github.event.inputs.dry-run != 'false' }};
-            const maxAgeDays = parseInt('${{ github.event.inputs.max-age-days }}' || '30');
-            const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
-            const now = Date.now();
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/cleanup
+      go_version: '1.25.1'
+      coverage_threshold: 70
 
-            console.log(`🧹 Cleaning artifacts older than ${maxAgeDays} days (Dry run: ${dryRun})`);
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/cleanup
 
-            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: cleanup
+      dockerfile_path: ./services/cleanup
+      push: ${{ github.ref == 'refs/heads/main' }}
 
-            let deletedCount = 0;
-            let freedSpace = 0;
-
-            for (const artifact of artifacts.artifacts) {
-              const createdAt = new Date(artifact.created_at).getTime();
-              const age = now - createdAt;
-
-              if (age > maxAgeMs) {
-                console.log(`${dryRun ? 'Would delete' : 'Deleting'}: ${artifact.name} (${(artifact.size_in_bytes / 1024 / 1024).toFixed(2)} MB)`);
-
-                if (!dryRun) {
-                  await github.rest.actions.deleteArtifact({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    artifact_id: artifact.id
-                  });
-                }
-
-                deletedCount++;
-                freedSpace += artifact.size_in_bytes;
-              }
-            }
-
-            console.log(`✅ ${dryRun ? 'Would delete' : 'Deleted'} ${deletedCount} artifacts, freeing ${(freedSpace / 1024 / 1024).toFixed(2)} MB`);
-
-  cleanup-workflow-runs:
-    name: Cleanup Old Workflow Runs
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete old workflow runs
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const dryRun = ${{ github.event.inputs.dry-run != 'false' }};
-            const maxAgeDays = parseInt('${{ github.event.inputs.max-age-days }}' || '90');
-            const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
-            const now = Date.now();
-
-            console.log(`🧹 Cleaning workflow runs older than ${maxAgeDays} days (Dry run: ${dryRun})`);
-
-            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              status: 'completed',
-              per_page: 100
-            });
-
-            let deletedCount = 0;
-
-            for (const run of runs.workflow_runs) {
-              const createdAt = new Date(run.created_at).getTime();
-              const age = now - createdAt;
-
-              if (age > maxAgeMs && run.conclusion !== null) {
-                console.log(`${dryRun ? 'Would delete' : 'Deleting'} run: ${run.name} #${run.run_number}`);
-
-                if (!dryRun) {
-                  await github.rest.actions.deleteWorkflowRun({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    run_id: run.id
-                  }).catch(err => console.log(`Failed to delete run ${run.id}: ${err.message}`));
-                }
-
-                deletedCount++;
-              }
-            }
-
-            console.log(`✅ ${dryRun ? 'Would delete' : 'Deleted'} ${deletedCount} workflow runs`);
-
-  cleanup-container-images:
-    name: Cleanup Old Container Images
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete untagged images
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const dryRun = ${{ github.event.inputs.dry-run != 'false' }};
-            const maxAgeDays = parseInt('${{ github.event.inputs.max-age-days }}' || '30');
-            const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
-            const now = Date.now();
-
-            console.log(`🧹 Cleaning untagged container images older than ${maxAgeDays} days (Dry run: ${dryRun})`);
-
-            // Determine if this is an org or user repository
-            let isOrg = false;
-            try {
-              await github.rest.orgs.get({ org: context.repo.owner });
-              isOrg = true;
-              console.log(`Repository owner '${context.repo.owner}' is an organization`);
-            } catch (error) {
-              console.log(`Repository owner '${context.repo.owner}' is a user`);
-            }
-
-            try {
-              // List packages based on owner type
-              let packages = [];
-              if (isOrg) {
-                const { data } = await github.rest.packages.listPackagesForOrg({
-                  package_type: 'container',
-                  org: context.repo.owner
-                });
-                packages = data;
-              } else {
-                const { data } = await github.rest.packages.listPackagesForAuthenticatedUser({
-                  package_type: 'container'
-                });
-                // Filter to only packages from this repository
-                packages = data.filter(pkg => pkg.repository?.owner?.login === context.repo.owner);
-              }
-
-              let deletedCount = 0;
-              let freedSpace = 0;
-
-              for (const pkg of packages) {
-                console.log(`Checking package: ${pkg.name}`);
-
-                // Get package versions based on owner type
-                let versions = [];
-                if (isOrg) {
-                  const { data } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
-                    package_type: 'container',
-                    package_name: pkg.name,
-                    org: context.repo.owner,
-                    state: 'active',
-                    per_page: 100
-                  });
-                  versions = data;
-                } else {
-                  const { data } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByAuthenticatedUser({
-                    package_type: 'container',
-                    package_name: pkg.name,
-                    state: 'active'
-                  });
-                  versions = data;
-                }
-
-                for (const version of versions) {
-                  const createdAt = new Date(version.created_at).getTime();
-                  const age = now - createdAt;
-
-                  // Only delete untagged versions older than threshold
-                  if (version.metadata.container.tags.length === 0 && age > maxAgeMs) {
-                    const sizeMB = (version.size || 0) / 1024 / 1024;
-                    console.log(`${dryRun ? 'Would delete' : 'Deleting'} untagged version: ${version.id} (${sizeMB.toFixed(2)} MB, ${Math.round(age / 1000 / 60 / 60 / 24)} days old)`);
-
-                    if (!dryRun) {
-                      try {
-                        if (isOrg) {
-                          await github.rest.packages.deletePackageVersionForOrg({
-                            package_type: 'container',
-                            package_name: pkg.name,
-                            org: context.repo.owner,
-                            package_version_id: version.id
-                          });
-                        } else {
-                          await github.rest.packages.deletePackageVersionForAuthenticatedUser({
-                            package_type: 'container',
-                            package_name: pkg.name,
-                            package_version_id: version.id
-                          });
-                        }
-                        deletedCount++;
-                        freedSpace += version.size || 0;
-                      } catch (err) {
-                        console.log(`Failed to delete version: ${err.message}`);
-                      }
-                    }
-                  }
-                }
-              }
-
-              console.log(`✅ ${dryRun ? 'Would delete' : 'Deleted'} ${deletedCount} untagged images, freeing ${(freedSpace / 1024 / 1024).toFixed(2)} MB`);
-            } catch (error) {
-              console.log(`Package cleanup failed: ${error.message}`);
-            }
-
-  cleanup-caches:
-    name: Cleanup GitHub Actions Caches
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cleanup caches
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const dryRun = ${{ github.event.inputs.dry-run != 'false' }};
-            const maxAgeDays = 7; // Don't delete caches accessed in last 7 days
-            const maxSizeGB = 5; // Total cache size limit
-            const keepPerKey = 3; // Keep 3 most recent caches per key
-
-            console.log(`🧹 Cleaning caches older than ${maxAgeDays} days (Dry run: ${dryRun})`);
-
-            const { data: cacheData } = await github.rest.actions.getActionsCacheList({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-
-            const now = Date.now();
-            const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
-
-            // Filter and sort caches
-            const allCaches = cacheData.actions_caches;
-            const totalSizeGB = allCaches.reduce((acc, c) => acc + (c.size_in_bytes || 0), 0) / 1024 / 1024 / 1024;
-
-            console.log(`Total cache size: ${totalSizeGB.toFixed(2)} GB across ${allCaches.length} caches`);
-
-            // Sort by last accessed time (newest first)
-            const sortedCaches = allCaches.sort((a, b) =>
-              new Date(b.last_accessed_at) - new Date(a.last_accessed_at)
-            );
-
-            // Group caches by key prefix
-            const cachesByKey = {};
-            for (const cache of sortedCaches) {
-              // Extract key prefix (e.g., "go-mod" from "go-mod-ubuntu-latest-abc123")
-              const keyParts = cache.key.split('-');
-              const keyPrefix = keyParts.length > 2 ? keyParts.slice(0, 2).join('-') : keyParts[0];
-
-              if (!cachesByKey[keyPrefix]) {
-                cachesByKey[keyPrefix] = [];
-              }
-              cachesByKey[keyPrefix].push(cache);
-            }
-
-            let deletedCount = 0;
-            let freedSpace = 0;
-            const toDelete = [];
-
-            // Identify caches to delete
-            for (const keyPrefix in cachesByKey) {
-              const keyCaches = cachesByKey[keyPrefix];
-              console.log(`Key prefix '${keyPrefix}': ${keyCaches.length} caches`);
-
-              keyCaches.forEach((cache, index) => {
-                const age = now - new Date(cache.last_accessed_at).getTime();
-                const ageDays = Math.round(age / 1000 / 60 / 60 / 24);
-                const sizeMB = (cache.size_in_bytes || 0) / 1024 / 1024;
-
-                // Delete if:
-                // 1. More than keepPerKey caches for this key (keep newest)
-                // 2. AND cache is older than maxAgeDays
-                // 3. OR total size exceeds limit (delete oldest first)
-                const shouldDelete = (index >= keepPerKey && age > maxAgeMs) ||
-                                   (totalSizeGB > maxSizeGB && index >= keepPerKey);
-
-                if (shouldDelete) {
-                  console.log(`  ${dryRun ? 'Would delete' : 'Will delete'}: ${cache.key.substring(0, 50)}... (${sizeMB.toFixed(2)} MB, ${ageDays} days old)`);
-                  toDelete.push(cache);
-                  freedSpace += cache.size_in_bytes || 0;
-                } else if (index < keepPerKey) {
-                  console.log(`  Keeping (recent #${index + 1}): ${cache.key.substring(0, 50)}... (${sizeMB.toFixed(2)} MB, ${ageDays} days old)`);
-                } else {
-                  console.log(`  Keeping (still hot): ${cache.key.substring(0, 50)}... (${sizeMB.toFixed(2)} MB, ${ageDays} days old)`);
-                }
-              });
-            }
-
-            // Delete identified caches
-            if (!dryRun) {
-              for (const cache of toDelete) {
-                try {
-                  await github.rest.actions.deleteActionsCacheById({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    cache_id: cache.id
-                  });
-                  deletedCount++;
-                } catch (err) {
-                  console.log(`Failed to delete cache ${cache.id}: ${err.message}`);
-                }
-              }
-            } else {
-              deletedCount = toDelete.length;
-            }
-
-            const newTotalGB = (totalSizeGB - freedSpace / 1024 / 1024 / 1024).toFixed(2);
-            console.log(`\n✅ ${dryRun ? 'Would delete' : 'Deleted'} ${deletedCount} caches`);
-            console.log(`   Freed: ${(freedSpace / 1024 / 1024).toFixed(2)} MB`);
-            console.log(`   New total size: ${newTotalGB} GB`);
-
-  optimize-repository:
-    name: Repository Optimization
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
-        with:
-          fetch-depth: 0
-
-      - name: Git housekeeping
-        run: |
-          # Optimize git repository
-          git gc --aggressive --prune=now
-
-          # Show repository size
-          echo "Repository size:"
-          du -sh .git
-
-          # Find large files
-          echo "Large files in repository:"
-          find . -type f -size +1M -exec ls -lh {} \; | head -20
-
-      - name: Generate cleanup report
-        run: |
-          cat > cleanup-report.md << 'EOF'
-          # 🧹 Cleanup and Maintenance Report
-
-          **Date**: $(date)
-          **Dry Run**: ${{ github.event.inputs.dry-run }}
-
-          ## Actions Taken
-
-          - ✅ Cleaned old artifacts (>30 days)
-          - ✅ Removed old workflow runs (>90 days)
-          - ✅ Deleted untagged container images
-          - ✅ Optimized GitHub Actions caches
-          - ✅ Performed git housekeeping
-
-          ## Space Savings
-
-          Estimated space freed: Check workflow logs for details
-
-          ## Recommendations
-
-          1. **Regular Cleanup**: Run this workflow weekly
-          2. **Artifact Retention**: Review retention policies
-          3. **Cache Strategy**: Optimize cache keys
-          4. **Image Tags**: Ensure proper tagging strategy
-
-          ---
-          *This report was automatically generated by the Cleanup workflow*
-          EOF
-
-          cat cleanup-report.md >> $GITHUB_STEP_SUMMARY
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/cleanup

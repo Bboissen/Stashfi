@@ -1,198 +1,48 @@
-name: Workflow Status Dashboard
+name: dashboard (Migrated)
 
 on:
-  schedule:
-    - cron: '0 9 * * MON'  # Weekly on Monday at 9 AM UTC
-  workflow_dispatch:
+  # Copy triggers from original workflow
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
-  contents: write
-  issues: write
+  contents: read
+  packages: write
+  security-events: write
 
 jobs:
-  generate-dashboard:
-    name: Generate Workflow Status Dashboard
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.0
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/dashboard
+      go_version: '1.25.1'
+      coverage_threshold: 70
 
-      - name: Gather workflow metrics
-        uses: actions/github-script@v8
-        id: metrics
-        with:
-          script: |
-            const { data: workflows } = await github.rest.actions.listRepoWorkflows({
-              owner: context.repo.owner,
-              repo: context.repo.repo
-            });
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/dashboard
 
-            const metrics = {
-              total_workflows: workflows.total_count,
-              workflows: []
-            };
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: dashboard
+      dockerfile_path: ./services/dashboard
+      push: ${{ github.ref == 'refs/heads/main' }}
 
-            for (const workflow of workflows.workflows) {
-              const { data: runs } = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: workflow.id,
-                per_page: 100
-              });
-
-              const success_rate = runs.workflow_runs.length > 0
-                ? (runs.workflow_runs.filter(r => r.conclusion === 'success').length / runs.workflow_runs.length * 100).toFixed(1)
-                : 0;
-
-              const avg_duration = runs.workflow_runs.length > 0
-                ? Math.round(runs.workflow_runs.reduce((acc, r) => {
-                    if (r.run_started_at && r.updated_at) {
-                      const duration = new Date(r.updated_at) - new Date(r.run_started_at);
-                      return acc + duration;
-                    }
-                    return acc;
-                  }, 0) / runs.workflow_runs.length / 1000 / 60)
-                : 0;
-
-              metrics.workflows.push({
-                name: workflow.name,
-                path: workflow.path,
-                state: workflow.state,
-                total_runs: runs.total_count,
-                success_rate: success_rate,
-                avg_duration_minutes: avg_duration,
-                badge_url: workflow.badge_url
-              });
-            }
-
-            return metrics;
-
-      - name: Generate dashboard markdown
-        run: |
-          cat > WORKFLOW_DASHBOARD.md << 'EOF'
-          # 📊 GitHub Actions Workflow Dashboard
-
-          *Last Updated: $(date)*
-
-          ## Workflow Status Badges
-
-          ![API Gateway CI](https://github.com/${{ github.repository }}/workflows/API%20Gateway%20CI/badge.svg)
-          ![Docker Build](https://github.com/${{ github.repository }}/workflows/Docker%20Build%20%26%20Scan/badge.svg)
-          ![Security Scan](https://github.com/${{ github.repository }}/workflows/Security%20Scanning/badge.svg)
-          ![Helm Validation](https://github.com/${{ github.repository }}/workflows/Helm%20Chart%20Validation/badge.svg)
-          ![K8s Validation](https://github.com/${{ github.repository }}/workflows/Kubernetes%20Manifests%20Validation/badge.svg)
-
-          ## Workflow Metrics
-
-          | Workflow | Total Runs | Success Rate | Avg Duration |
-          |----------|------------|--------------|--------------|
-          EOF
-
-          # Add metrics from the gathered data
-          echo '${{ steps.metrics.outputs.result }}' | jq -r '.workflows[] | "| \(.name) | \(.total_runs) | \(.success_rate)% | \(.avg_duration_minutes) min |"' >> WORKFLOW_DASHBOARD.md
-
-          cat >> WORKFLOW_DASHBOARD.md << 'EOF'
-
-          ## Workflow Categories
-
-          ### 🔧 Continuous Integration
-          - **API Gateway CI**: Code quality, testing, and building
-          - **Docker Build & Scan**: Container image creation and vulnerability scanning
-          - **Integration Tests**: End-to-end testing with Kind/Minikube
-
-          ### 🔒 Security & Compliance
-          - **Security Scanning**: SAST, dependency scanning, secret detection
-          - **Dependency Management**: Automated updates and vulnerability checks
-          - **License Compliance**: License verification and reporting
-
-          ### 📦 Deployment & Release
-          - **Release Automation**: Automated versioning and artifact creation
-          - **Helm Validation**: Chart linting and testing
-          - **K8s Validation**: Manifest validation and policy checks
-
-          ### 📈 Performance & Quality
-          - **Performance Benchmarking**: Go benchmarks and load testing
-          - **PR Automation**: Auto-labeling, size checks, and review assignment
-
-          ## Quick Links
-
-          - [View All Workflows](https://github.com/${{ github.repository }}/actions)
-          - [Security Alerts](https://github.com/${{ github.repository }}/security)
-          - [Dependency Graph](https://github.com/${{ github.repository }}/network/dependencies)
-          - [Insights](https://github.com/${{ github.repository }}/pulse)
-
-          ## Maintenance Schedule
-
-          | Workflow | Schedule | Description |
-          |----------|----------|-------------|
-          | Security Scan | Weekly (Monday 6 AM) | Full security audit |
-          | Dependency Update | Weekly (Monday 8 AM) | Check for updates |
-          | Performance Benchmark | Weekly (Sunday 3 AM) | Performance baseline |
-          | Integration Tests | Nightly (2 AM) | Full integration suite |
-          | Dashboard Update | Weekly (Monday 9 AM) | This dashboard |
-
-          ## Cost Optimization
-
-          ### Current Usage (Estimated)
-          - **Actions Minutes**: ~2000 minutes/month
-          - **Storage**: ~5 GB (artifacts + caches)
-          - **Parallel Jobs**: Max 20 concurrent
-
-          ### Optimization Tips
-          1. Use workflow conditions to skip unnecessary runs
-          2. Implement effective caching strategies
-          3. Clean up old artifacts regularly
-          4. Use matrix builds efficiently
-
-          ---
-
-          *This dashboard is automatically generated by the [Workflow Status Dashboard](https://github.com/${{ github.repository }}/blob/main/.github/workflows/dashboard.yml) workflow.*
-          EOF
-
-      - name: Create or update dashboard issue
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const dashboardContent = require('fs').readFileSync('WORKFLOW_DASHBOARD.md', 'utf8');
-
-            // Search for existing dashboard issue
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: 'dashboard,automated',
-              state: 'open'
-            });
-
-            const dashboardIssue = issues.find(i => i.title.includes('Workflow Dashboard'));
-
-            if (dashboardIssue) {
-              // Update existing issue
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: dashboardIssue.number,
-                body: dashboardContent
-              });
-              console.log(`Updated dashboard issue #${dashboardIssue.number}`);
-            } else {
-              // Create new issue
-              const issue = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: '📊 Workflow Dashboard - ' + new Date().toISOString().split('T')[0],
-                body: dashboardContent,
-                labels: ['dashboard', 'automated']
-              });
-              console.log(`Created dashboard issue #${issue.data.number}`);
-              // Note: GitHub API doesn't support pinning issues during creation
-              // Issues must be pinned manually or via GraphQL API after creation
-            }
-
-      - name: Commit dashboard to repository
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          git add WORKFLOW_DASHBOARD.md
-          git commit -m "chore: update workflow dashboard [skip ci]" || echo "No changes to commit"
-          git push || echo "No changes to push"
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/dashboard

@@ -1,0 +1,29 @@
+# Copy to .vars (do NOT commit .vars)
+# Project configuration variables
+APP_NAME=stashfi
+PROJECT_NAME=Stashfi
+DOCKER_REGISTRY=ghcr.io/stashfi
+NODE_ENV=test
+
+# Service versions (aligned with mise.toml)
+NODE_VERSION=24.7.0
+GO_VERSION=1.25.1
+PNPM_VERSION=9.9.0
+
+# Kubernetes configuration
+K8S_NAMESPACE=stashfi-local
+HELM_RELEASE_NAME=stashfi
+MINIKUBE_PROFILE=stashfi
+
+# Kong API Gateway configuration
+KONG_ADMIN_URL=http://localhost:8001
+KONG_PROXY_URL=http://localhost:8000
+
+# Build configuration
+BUILD_PLATFORMS=linux/amd64,linux/arm64
+BUILDKIT_PROGRESS=plain
+
+# Feature flags
+ENABLE_INTEGRATION_TESTS=true
+ENABLE_SECURITY_SCANS=true
+ENABLE_SBOM_GENERATION=true

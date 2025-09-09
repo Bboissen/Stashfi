@@ -1,0 +1,30 @@
+# Act configuration for local GitHub Actions execution
+# Run with: act -j <job-name> or act push to simulate push event
+
+# Workflows directory
+--workflows=.github/workflows
+
+# Secret and variable files for local runs
+--secret-file=.secrets
+--var-file=.vars
+
+# Map GitHub runner labels to our custom CI toolbox image
+# ALL workflows should use containerized jobs with our image
+# Build locally: docker buildx build -t ghcr.io/stashfi/ci-toolbox:24.04 -f infra/containers/ci-toolbox/Dockerfile .
+# Or trigger: gh workflow run ci-toolbox.yml
+-P ubuntu-latest=ghcr.io/bboissen/ci-toolbox:24.04
+-P ubuntu-24.04=ghcr.io/bboissen/ci-toolbox:24.04
+
+# Container options for Docker-in-Docker support
+# --container-options --privileged -v /var/run/docker.sock:/var/run/docker.sock
+
+# Use native architecture (comment out to force amd64)
+# --container-architecture=linux/amd64
+
+# Optional: Reuse containers between runs for faster iteration
+# --reuse
+
+# Note: If a workflow fails with our image, it means the workflow needs fixing,
+# not that we need a fallback. The workflow should either:
+# 1. Run in a container with our image, or
+# 2. Be a Docker build job that runs on the host runner

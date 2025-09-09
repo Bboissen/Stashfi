@@ -1,27 +1,48 @@
-name: Version Guard
+name: version-guard (Migrated)
 
 on:
+  # Copy triggers from original workflow
   push:
-    branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "chore/**" ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
+  security-events: write
 
 jobs:
-  guard:
-    name: Enforce Pinned Versions
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5.0.0
+  # Example: Go testing
+  test:
+    name: Test
+    uses: ./.github/workflows/_reusable-go-test.yml
+    with:
+      service_path: ./services/version-guard
+      go_version: '1.25.1'
+      coverage_threshold: 70
 
-      - name: Install ripgrep
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ripgrep
+  # Example: Security scanning
+  security:
+    name: Security
+    uses: ./.github/workflows/_reusable-security-scan.yml
+    with:
+      language: go
+      scan_path: ./services/version-guard
 
-      - name: Run version guard
-        run: bash scripts/version-guard.sh
+  # Example: Docker build
+  docker:
+    name: Build
+    needs: [test]
+    uses: ./.github/workflows/_reusable-docker-build.yml
+    with:
+      image_name: version-guard
+      dockerfile_path: ./services/version-guard
+      push: ${{ github.ref == 'refs/heads/main' }}
+
+  # Example: Helm validation
+  helm:
+    name: Helm
+    uses: ./.github/workflows/_reusable-helm-validate.yml
+    with:
+      chart_path: ./infra/helm/version-guard

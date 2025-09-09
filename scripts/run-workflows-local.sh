@@ -47,11 +47,19 @@ if [[ -z "$ARCH" ]]; then
 fi
 
 # Use a slimmer runner image to reduce pull size
-RUNNER_IMAGE="catthehacker/ubuntu:act-22.04"
+RUNNER_IMAGE="${ACT_IMAGE:-stashfi/ci-toolbox:24.04}"
 MAP_PLATFORM=("-P" "ubuntu-latest=${RUNNER_IMAGE}" "--container-architecture" "$ARCH")
 
-echo "➡️  Pulling runner image: ${RUNNER_IMAGE} (may take a while)"
-docker pull "$RUNNER_IMAGE" >/dev/null
+if [[ -n "${GHCR_TOKEN:-}" && -n "${GHCR_USER:-}" ]]; then
+  echo "Logging into ghcr.io as ${GHCR_USER} for runner image"
+  echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || true
+fi
+
+echo "➡️  Checking runner image: ${RUNNER_IMAGE}"
+if ! docker image inspect "$RUNNER_IMAGE" >/dev/null 2>&1; then
+  echo "❌ Runner image not found: $RUNNER_IMAGE. Build it with: scripts/build_ci_toolbox.sh"
+  exit 1
+fi
 
 set -x
 
@@ -60,7 +68,7 @@ run_job() {
   local wf="$1"; local job="$2"
   local label="${wf##*/}:${job}"
   echo "\n=== Running ${label} ===\n"
-  if act push "${MAP_PLATFORM[@]}" -W "$wf" -j "$job"; then
+  if act push "${MAP_PLATFORM[@]}" --pull=false -W "$wf" -j "$job"; then
     RESULTS+=("OK ${label}")
   else
     RESULTS+=("FAIL ${label}")
