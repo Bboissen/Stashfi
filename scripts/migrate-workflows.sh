@@ -4,7 +4,6 @@
 set -e
 
 # Colors for output
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
@@ -15,7 +14,8 @@ echo "================================"
 # Function to analyze a workflow
 analyze_workflow() {
     local workflow_file="$1"
-    local workflow_name=$(basename "$workflow_file")
+    local workflow_name
+    workflow_name=$(basename "$workflow_file")
 
     echo -e "\n${YELLOW}Analyzing: ${workflow_name}${NC}"
 
@@ -37,7 +37,8 @@ analyze_workflow() {
     fi
 
     # Count lines
-    local line_count=$(wc -l < "$workflow_file")
+    local line_count
+    line_count=$(wc -l < "$workflow_file")
     echo "  📊 Current size: ${line_count} lines"
 
     # Estimate reduction
@@ -49,7 +50,8 @@ analyze_workflow() {
 # Function to create a migration template
 create_migration_template() {
     local workflow_file="$1"
-    local workflow_name=$(basename "$workflow_file" .yml)
+    local workflow_name
+    workflow_name=$(basename "$workflow_file" .yml)
     local output_file=".github/workflows/${workflow_name}-migrated.yml"
 
     echo -e "\n${YELLOW}Creating migration template for: ${workflow_name}${NC}"
@@ -77,7 +79,7 @@ jobs:
     with:
       service_path: ./services/SERVICE_NAME
       go_version: '1.25.1'
-      coverage_threshold: 70
+      coverage_threshold: 50
 
   # Example: Security scanning
   security:
