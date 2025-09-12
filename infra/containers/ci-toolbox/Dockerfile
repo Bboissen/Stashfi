@@ -2,6 +2,9 @@
 # Base: Ubuntu 24.04 (noble)
 FROM ubuntu:24.04
 
+# Ensure bash is used with pipefail for RUN steps using pipes
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Versions (keep in sync with mise.toml and .github/VERSIONS.md)
@@ -18,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     unzip zip \
     build-essential \
-    python3 python3-pip \
+    python3 python3-pip python3-venv \
     openssh-client \
     gnupg \
     lsb-release \
@@ -102,7 +105,7 @@ RUN set -eux; \
   helm version
 
 # Install kubectl (matches mise.toml version)
-ENV KUBECTL_VERSION=1.34.0
+ENV KUBECTL_VERSION=1.34.1
 RUN set -eux; \
   arch="$(dpkg --print-architecture)"; \
   curl -fsSL "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" -o /usr/local/bin/kubectl; \
@@ -159,24 +162,45 @@ RUN set -eux; \
   trivy version
 
 # Install golangci-lint (build from source to work with Go 1.25.1)
-ENV GOLANGCI_LINT_VERSION=1.63.4
-RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION} && \
+ENV GOLANGCI_LINT_VERSION=2.4.0
+RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION} && \
     mv /root/go/bin/golangci-lint /usr/local/bin/
 
 # Install gitleaks for secret scanning
-ENV GITLEAKS_VERSION=8.21.2
+ENV GITLEAKS_VERSION=8.28.0
 RUN set -eux; \
   arch="$(dpkg --print-architecture)"; \
-  curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${arch}.tar.gz" | tar -xz -C /tmp gitleaks; \
+  case "$arch" in \
+    amd64) gitleaksarch="x64" ;; \
+    arm64) gitleaksarch="arm64" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${gitleaksarch}.tar.gz" | tar -xz -C /tmp gitleaks; \
   mv /tmp/gitleaks /usr/local/bin/gitleaks; \
   chmod +x /usr/local/bin/gitleaks
 
 # Install gosec for Go security scanning
-RUN go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0 && \
+RUN go install github.com/securego/gosec/v2/cmd/gosec@v2.22.8 && \
     mv /root/go/bin/gosec /usr/local/bin/
+
+# Install pipx via apt and Semgrep for security analysis (latest version)
+ENV PATH="/root/.local/bin:${PATH}"
+RUN apt-get update && apt-get install -y --no-install-recommends pipx && \
+    rm -rf /var/lib/apt/lists/* && \
+    pipx install "semgrep==1.86.0" && \
+    pipx ensurepath && \
+    ln -s /root/.local/bin/semgrep /usr/local/bin/semgrep
 
 # Helpful defaults for act
 ENV DOCKER_HOST=unix:///var/run/docker.sock
+
+# Suppress Node.js deprecation warnings that come from GitHub Actions
+ENV NODE_NO_WARNINGS=1
+
+# Set up GitHub Actions runner environment
+ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+ENV RUNNER_TEMP=/tmp
+RUN mkdir -p /opt/hostedtoolcache
 
 # Create a non-root user (optional; most act images run as root)
 # RUN useradd -m -s /bin/bash runner && \
@@ -185,15 +209,15 @@ ENV DOCKER_HOST=unix:///var/run/docker.sock
 
 # Show versions to aid debugging
 RUN set -eux; \
-  echo "Node:\t$(node -v)"; \
-  echo "npm:\t$(npm -v)"; \
-  echo "pnpm:\t$(pnpm -v)"; \
-  echo "Go:\t$(go version)"; \
-  echo "Docker:\t$(docker --version || true)"; \
-  echo "Buildx:\t$(docker buildx version || true)"; \
-  echo "Python:\t$(python3 --version)"; \
-  echo "Git:\t$(git --version)"; \
-  echo "jq:\t$(jq --version)"
+  printf "Node:\t%s\n" "$(node -v)"; \
+  printf "npm:\t%s\n" "$(npm -v)"; \
+  printf "pnpm:\t%s\n" "$(pnpm -v)"; \
+  printf "Go:\t%s\n" "$(go version)"; \
+  printf "Docker:\t%s\n" "$(docker --version || true)"; \
+  printf "Buildx:\t%s\n" "$(docker buildx version || true)"; \
+  printf "Python:\t%s\n" "$(python3 --version)"; \
+  printf "Git:\t%s\n" "$(git --version)"; \
+  printf "jq:\t%s\n" "$(jq --version)"
 
 # The container expects the host Docker socket to be mounted by act:
 #   --container-options "--privileged -v /var/run/docker.sock:/var/run/docker.sock"

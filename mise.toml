@@ -11,7 +11,7 @@ uv   = "0.8.15"
 
 # Kubernetes and Helm tooling
 helm       = "3.18.6"
-kubectl    = "1.34.0"
+kubectl    = "1.34.1"
 minikube   = "1.36.0"
 kind       = "0.30.0"           # Match .github/VERSIONS.md
 kubeconform = "0.7.0"           # Modern replacement for deprecated kubeval, with ARM support
