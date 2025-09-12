@@ -8,15 +8,19 @@
 --secret-file=.secrets
 --var-file=.vars
 
-# Map GitHub runner labels to our custom CI toolbox image
-# ALL workflows should use containerized jobs with our image
-# Build locally: docker buildx build -t ghcr.io/stashfi/ci-toolbox:24.04 -f infra/containers/ci-toolbox/Dockerfile .
-# Or trigger: gh workflow run ci-toolbox.yml
+# Map GitHub runner labels to our CI toolbox image on GHCR
+# This ensures consistency between GitHub Actions and local testing
+# Build and push: ./scripts/build_ci_toolbox.sh --push --registry ghcr.io/bboissen/ci-toolbox
 -P ubuntu-latest=ghcr.io/bboissen/ci-toolbox:24.04
 -P ubuntu-24.04=ghcr.io/bboissen/ci-toolbox:24.04
 
-# Container options for Docker-in-Docker support
-# --container-options --privileged -v /var/run/docker.sock:/var/run/docker.sock
+# Environment variables needed for GitHub Actions compatibility
+--env RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+--env RUNNER_TEMP=/tmp
+--env NODE_NO_WARNINGS=1
+
+# Container options for privileged mode (needed for some operations)
+--container-options --privileged
 
 # Use native architecture (comment out to force amd64)
 # --container-architecture=linux/amd64
