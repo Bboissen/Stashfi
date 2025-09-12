@@ -1,0 +1,172 @@
+name: API Integration Tests
+
+on:
+  push:
+    branches: [ main, "feat/**" ]
+    paths:
+      - 'services/api-gateway/**'
+      - 'infra/helm/kong/**'
+      - 'specs/**'
+      - '.github/workflows/api-integration-test.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'services/api-gateway/**'
+      - 'infra/helm/kong/**'
+      - 'specs/**'
+      - '.github/workflows/api-integration-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  integration-test:
+    name: API Integration Tests
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kong
+          POSTGRES_PASSWORD: kong
+          POSTGRES_DB: kong
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.0.0
+        with:
+          go-version: '1.25.1'
+
+      - name: Install Kong
+        run: |
+          curl -Lo kong.deb "https://download.konghq.com/gateway-3.x-ubuntu-$(lsb_release -rs)/pool/all/k/kong/kong_3.10.1_amd64.deb"
+          sudo dpkg -i kong.deb
+          rm kong.deb
+
+      - name: Configure Kong
+        run: |
+          # Create Kong configuration
+          cat > /tmp/kong.conf << EOF
+          database = postgres
+          pg_host = localhost
+          pg_port = 5432
+          pg_user = kong
+          pg_password = kong
+          pg_database = kong
+          admin_listen = 127.0.0.1:8001
+          proxy_listen = 127.0.0.1:8000
+          EOF
+
+          # Bootstrap Kong database
+          kong migrations bootstrap -c /tmp/kong.conf
+          kong migrations up -c /tmp/kong.conf
+          kong migrations finish -c /tmp/kong.conf
+
+      - name: Start Kong
+        run: |
+          kong start -c /tmp/kong.conf
+          sleep 5
+          curl -i http://localhost:8001/
+
+      - name: Build API Gateway
+        run: |
+          cd services/api-gateway
+          go build -o api-gateway .
+
+      - name: Start API Gateway
+        run: |
+          cd services/api-gateway
+          ./api-gateway &
+          sleep 3
+          # Check health endpoint
+          curl -f http://localhost:8080/health || exit 1
+
+      - name: Configure Kong Routes
+        run: |
+          # Add API Gateway as upstream
+          curl -X POST http://localhost:8001/upstreams \
+            --data "name=api-gateway"
+
+          curl -X POST http://localhost:8001/upstreams/api-gateway/targets \
+            --data "target=127.0.0.1:8080" \
+            --data "weight=100"
+
+          # Create service
+          curl -X POST http://localhost:8001/services \
+            --data "name=api-gateway-service" \
+            --data "url=http://api-gateway/api"
+
+          # Create route
+          curl -X POST http://localhost:8001/services/api-gateway-service/routes \
+            --data "paths[]=/api" \
+            --data "strip_path=false"
+
+      - name: Test API Endpoints
+        run: |
+          # Test health through Kong
+          curl -f http://localhost:8000/api/health || exit 1
+
+          # Test readiness through Kong
+          curl -f http://localhost:8000/api/ready || exit 1
+
+      - name: Run API Tests
+        run: |
+          cd services/api-gateway
+          go test -v ./... -tags=integration
+
+      - name: OpenAPI Spec Validation
+        run: |
+          # Install spectral for OpenAPI linting
+          npm install -g @stoplight/spectral-cli
+
+          # Validate OpenAPI spec
+          if [ -f specs/api-gateway.yaml ]; then
+            spectral lint specs/api-gateway.yaml
+          fi
+
+      - name: Load Testing
+        run: |
+          # Install k6
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+          # Create basic load test
+          cat > loadtest.js << 'EOF'
+          import http from 'k6/http';
+          import { check } from 'k6';
+
+          export let options = {
+            stages: [
+              { duration: '10s', target: 10 },
+              { duration: '20s', target: 10 },
+              { duration: '10s', target: 0 },
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<500'],
+              http_req_failed: ['rate<0.1'],
+            },
+          };
+
+          export default function() {
+            let response = http.get('http://localhost:8000/api/health');
+            check(response, {
+              'status is 200': (r) => r.status === 200,
+            });
+          }
+          EOF
+
+          # Run load test
+          k6 run loadtest.js

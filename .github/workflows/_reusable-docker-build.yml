@@ -66,7 +66,7 @@ jobs:
         with:
           driver-opts: |
             network=host
-            image=moby/buildkit:v0.18.1
+            image=moby/buildkit:v0.24.0
 
       - name: Log in to Registry
         if: inputs.push
@@ -95,14 +95,17 @@ jobs:
         with:
           context: ${{ inputs.dockerfile_path }}
           file: ${{ inputs.dockerfile_path }}/Dockerfile
-          platforms: ${{ inputs.platforms }}
-          push: ${{ inputs.push }}
+          platforms: ${{ (!inputs.push || env.ACT) && 'linux/amd64' || inputs.platforms }}
+          push: ${{ inputs.push && !env.ACT }}
+          load: ${{ !inputs.push || env.ACT }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          sbom: ${{ inputs.scan_image }}
-          provenance: ${{ inputs.scan_image }}
+          # Docker exporter (load: true) does not support attestations (sbom/provenance).
+          # Enable them only when pushing to a registry (i.e., using registry exporter).
+          sbom: ${{ inputs.scan_image && inputs.push && !env.ACT }}
+          provenance: ${{ inputs.scan_image && inputs.push && !env.ACT }}
 
       - name: Run Trivy vulnerability scan
         if: inputs.scan_image && inputs.push

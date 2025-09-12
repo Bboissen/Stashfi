@@ -29,3 +29,140 @@ jobs:
       kubernetes_version: '1.31.3'
       run_kubeconform: true
       run_pluto: true
+
+  kong-specific-validation:
+    name: Kong Configuration Validation
+    runs-on: ubuntu-24.04
+    needs: validate-kong
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Install tools
+        run: |
+          # Check if tools are already available (CI toolbox provides them)
+          if ! command -v helm &> /dev/null; then
+            echo "Installing Helm..."
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash -s -- --version v3.18.6
+          else
+            echo "Helm already installed: $(helm version --short)"
+          fi
+
+          # Install yq for YAML processing if not available
+          if ! command -v yq &> /dev/null; then
+            echo "Installing yq..."
+            wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            chmod +x /usr/local/bin/yq
+          else
+            echo "yq already installed: $(yq --version)"
+          fi
+
+      - name: Add Kong Helm repository
+        run: |
+          helm repo add kong https://charts.konghq.com
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: |
+          cd infra/helm/kong
+          helm dependency build
+          echo "✅ Helm dependencies built successfully"
+
+      - name: Validate Kong values
+        run: |
+          cd infra/helm/kong
+
+          # Check for required Kong configurations
+          echo "Checking Kong configuration..."
+
+          # Verify DB-less mode or database config
+          if yq eval '.env.database' values.yaml | grep -q "off"; then
+            echo "✅ DB-less mode configured"
+            # Check for declarative config in DB-less mode
+            if ! yq eval '.env.declarative_config' values.yaml > /dev/null; then
+              echo "⚠️  Warning: DB-less mode but no declarative_config set"
+            fi
+          else
+            echo "✅ Database mode configured"
+          fi
+
+          # Check admin API configuration
+          if yq eval '.admin.enabled' values.yaml | grep -q "true"; then
+            echo "✅ Admin API enabled"
+          else
+            echo "⚠️  Warning: Admin API disabled - management will be limited"
+          fi
+
+          # Check proxy configuration
+          if yq eval '.proxy.enabled' values.yaml | grep -q "true"; then
+            echo "✅ Proxy enabled"
+          else
+            echo "❌ Error: Proxy must be enabled"
+            exit 1
+          fi
+
+          # Validate ingress configuration if enabled
+          if yq eval '.proxy.ingress.enabled' values.yaml | grep -q "true"; then
+            echo "✅ Ingress configured"
+            # Check for TLS configuration
+            if yq eval '.proxy.ingress.tls' values.yaml | grep -q "null"; then
+              echo "⚠️  Warning: Ingress enabled but no TLS configuration"
+            fi
+          fi
+
+      - name: Dry-run Kong installation
+        run: |
+          cd infra/helm/kong
+
+          # Template the chart to validate rendering
+          helm template kong . \
+            --namespace kong \
+            --debug \
+            > /tmp/kong-dry-run.yaml
+
+          echo "✅ Kong Helm chart template rendering successful"
+
+          # Check for potential issues in rendered manifests
+          if grep -q "emptyDir" /tmp/kong-dry-run.yaml; then
+            echo "⚠️  Warning: Using emptyDir volumes - data will be lost on pod restart"
+          fi
+
+          # Check resource limits
+          if ! grep -q "limits:" /tmp/kong-dry-run.yaml; then
+            echo "⚠️  Warning: No resource limits configured"
+          fi
+
+      - name: Validate Kong plugins
+        run: |
+          cd infra/helm/kong
+
+          # Check if any Kong plugins are configured
+          if yq eval '.plugins' values.yaml 2>/dev/null | grep -v "null"; then
+            echo "✅ Kong plugins configured"
+
+            # List configured plugins
+            echo "Configured plugins:"
+            yq eval '.plugins' values.yaml || true
+          else
+            echo "ℹ️  No Kong plugins configured in values.yaml"
+          fi
+
+      - name: Security checks
+        run: |
+          cd infra/helm/kong
+
+          echo "Running security checks..."
+
+          # Check for security context
+          if yq eval '.securityContext' values.yaml | grep -v "null"; then
+            echo "✅ Security context configured"
+          else
+            echo "⚠️  Warning: Consider adding securityContext for better security"
+          fi
+
+          # Check for network policies
+          if yq eval '.networkPolicy.enabled' values.yaml | grep -q "true"; then
+            echo "✅ Network policies enabled"
+          else
+            echo "ℹ️  Network policies not enabled - consider for production"
+          fi

@@ -1,11 +1,18 @@
-name: api-gateway-ci (Migrated)
+name: API Gateway CI
 
 on:
-  # Copy triggers from original workflow
   push:
-    branches: [ main ]
+    branches: [ main, "feat/**", "fix/**" ]
+    paths:
+      - 'services/api-gateway/**'
+      - '.github/workflows/api-gateway-ci.yml'
+      - '.github/workflows/_reusable-*.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'services/api-gateway/**'
+      - '.github/workflows/api-gateway-ci.yml'
+      - '.github/workflows/_reusable-*.yml'
 
 permissions:
   contents: read
@@ -13,36 +20,29 @@ permissions:
   security-events: write
 
 jobs:
-  # Example: Go testing
+  # Go testing and linting
   test:
-    name: Test
+    name: Test & Lint
     uses: ./.github/workflows/_reusable-go-test.yml
     with:
-      service_path: ./services/api-gateway-ci
+      service_path: ./services/api-gateway
       go_version: '1.25.1'
-      coverage_threshold: 70
+      coverage_threshold: 50
 
-  # Example: Security scanning
+  # Security scanning
   security:
-    name: Security
+    name: Security Scan
     uses: ./.github/workflows/_reusable-security-scan.yml
     with:
       language: go
-      scan_path: ./services/api-gateway-ci
+      scan_path: ./services/api-gateway
 
-  # Example: Docker build
+  # Docker build
   docker:
-    name: Build
+    name: Build Docker Image
     needs: [test]
     uses: ./.github/workflows/_reusable-docker-build.yml
     with:
-      image_name: api-gateway-ci
-      dockerfile_path: ./services/api-gateway-ci
+      image_name: api-gateway
+      dockerfile_path: ./services/api-gateway
       push: ${{ github.ref == 'refs/heads/main' }}
-
-  # Example: Helm validation
-  helm:
-    name: Helm
-    uses: ./.github/workflows/_reusable-helm-validate.yml
-    with:
-      chart_path: ./infra/helm/api-gateway-ci

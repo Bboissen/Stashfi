@@ -28,11 +28,35 @@ jobs:
   validate:
     name: Validate Helm Chart
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/bboissen/ci-toolbox:24.04
-      options: --user root
 
     steps:
+      - name: Install tools
+        run: |
+          # Check if tools are already available (CI toolbox provides them)
+          if ! command -v helm &> /dev/null; then
+            echo "Installing Helm..."
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash -s -- --version v${{ inputs.helm_version }}
+          else
+            echo "Helm already installed: $(helm version --short)"
+          fi
+
+          if ! command -v kubeconform &> /dev/null; then
+            echo "Installing kubeconform..."
+            curl -L https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz
+            mv kubeconform /usr/local/bin
+            chmod +x /usr/local/bin/kubeconform
+          else
+            echo "Kubeconform already installed: $(kubeconform -v)"
+          fi
+
+          if ! command -v pluto &> /dev/null; then
+            echo "Installing pluto..."
+            curl -L https://github.com/FairwindsOps/pluto/releases/download/v5.22.5/pluto_5.22.5_linux_amd64.tar.gz | tar xz
+            mv pluto /usr/local/bin
+            chmod +x /usr/local/bin/pluto
+          else
+            echo "Pluto already installed: $(pluto version)"
+          fi
       - name: Checkout code
         uses: actions/checkout@v5.0.0
         with:
@@ -127,8 +151,20 @@ jobs:
           fi
 
       - name: Upload rendered manifests
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4.6.2
         with:
           name: helm-manifests-${{ github.job }}
           path: |
             ${{ inputs.chart_path }}/rendered-*.yaml
+
+      - name: Local validation summary
+        if: ${{ env.ACT }}
+        run: |
+          echo "📋 Helm Validation Summary (Local Run)"
+          echo "====================================="
+          echo ""
+          echo "Rendered manifests:"
+          ls -la ${{ inputs.chart_path }}/rendered-*.yaml 2>/dev/null || echo "No rendered manifests found"
+          echo ""
+          echo "✅ Validation completed locally (artifacts not uploaded)"

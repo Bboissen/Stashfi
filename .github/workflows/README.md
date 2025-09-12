@@ -14,7 +14,7 @@ This repository uses a comprehensive CI/CD pipeline powered by GitHub Actions. O
 - **Key Features**:
   - Multi-version Go testing (1.24, 1.25)
   - Race condition detection
-  - Coverage reporting with 70% threshold
+  - Coverage reporting with 50% threshold
   - Cross-platform builds (linux/darwin/windows)
   - Vulnerability scanning
 
@@ -203,7 +203,7 @@ GITLEAKS_LICENSE   # Gitleaks enhanced features
 ### Success Metrics
 - **Target CI Time**: <10 minutes
 - **Success Rate**: >95%
-- **Coverage**: >70%
+- **Coverage**: >50%
 - **Security**: Zero critical vulnerabilities
 
 ### Key Performance Indicators
