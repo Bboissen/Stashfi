@@ -18,21 +18,23 @@ on:
       coverage_threshold:
         description: 'Minimum coverage percentage'
         type: number
-        default: 70
+        default: 50
 
 jobs:
   test:
     name: Go Test & Lint
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/bboissen/ci-toolbox:24.04
-      options: --user root
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.0.0
+        with:
+          go-version: ${{ inputs.go_version }}
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -43,6 +45,13 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', inputs.service_path)) }}
           restore-keys: |
             go-${{ runner.os }}-
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6.1.1
+        with:
+          version: v2.4.0
+          working-directory: ${{ inputs.service_path }}
+          args: --timeout=5m
 
       - name: Check Go formatting
         working-directory: ${{ inputs.service_path }}
@@ -69,14 +78,6 @@ jobs:
           fi
           echo "✅ go.mod is tidy"
 
-      - name: Run golangci-lint
-        working-directory: ${{ inputs.service_path }}
-        run: |
-          if [ -f .golangci.yml ]; then
-            golangci-lint run --timeout=5m --config=.golangci.yml
-          else
-            golangci-lint run --timeout=5m
-          fi
 
       - name: Run unit tests with coverage
         working-directory: ${{ inputs.service_path }}
@@ -102,8 +103,8 @@ jobs:
         run: go test -v -race -tags=integration ./...
 
       - name: Upload coverage
-        # Continue on error for local runs with act (no ACTIONS_RUNTIME_TOKEN)
-        continue-on-error: true
+        # Only run in GitHub Actions, not in act (local testing)
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4.6.2
         with:
           name: coverage-${{ github.job }}

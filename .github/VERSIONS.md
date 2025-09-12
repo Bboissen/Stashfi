@@ -6,8 +6,8 @@ This document tracks all versions used across the Stashfi project to ensure cons
 
 | Component    | Version | Files                                    |
 | ------------ | ------- | ---------------------------------------- |
-| Go           | 1.25.0  | mise.toml, go.mod, Dockerfile, workflows |
-| Node.js      | 22.18.0 | mise.toml                                |
+| Go           | 1.25.1  | mise.toml, go.mod, Dockerfile, workflows |
+| Node.js      | 24.7.0  | CI toolbox Dockerfile                    |
 | Python       | 3.12    | mise.toml                                |
 | Alpine Linux | 3.22    | Dockerfile                               |
 
@@ -37,6 +37,7 @@ This document tracks all versions used across the Stashfi project to ensure cons
 | docker/build-push-action   | v6.18.0 | Docker build/push  |
 | docker/login-action        | v3.5.0  | Registry login     |
 | docker/setup-qemu-action   | v3.6.0  | Multi-arch support |
+| moby/buildkit              | v0.24.0 | Build toolkit      |
 | azure/setup-kubectl        | v4.0.1  | kubectl CLI        |
 | azure/setup-helm           | v4.3.1  | Helm CLI           |
 
@@ -63,7 +64,7 @@ This document tracks all versions used across the Stashfi project to ensure cons
 | ------------------------ | ------- | ---------------------- |
 | yq                       | 4.47.1  | YAML processing        |
 | jq                       | 1.8.1   | JSON processing        |
-| kubectl                  | 1.31.3  | K8s CLI                |
+| kubectl                  | 1.34.1  | K8s CLI                |
 | kubeconform              | 0.7.0   | K8s schema validation  |
 | OPA                      | 1.8.0   | Policy engine          |
 | Polaris                  | 10.1.1  | K8s best practices     |
@@ -88,10 +89,10 @@ This document tracks all versions used across the Stashfi project to ensure cons
 
 | Hook             | Version | Purpose            |
 | ---------------- | ------- | ------------------ |
-| gitleaks         | 8.21.2  | Secret detection   |
-| golangci-lint    | 1.61.0  | Go linting         |
+| gitleaks         | 8.28.0  | Secret detection   |
+| golangci-lint    | 2.4.0   | Go linting         |
 | hadolint         | 2.13.0  | Dockerfile linting |
-| pre-commit-hooks | 5.0.0   | Standard hooks     |
+| pre-commit-hooks | 6.0.0   | Standard hooks     |
 | commitizen       | 3.30.1  | Commit messages    |
 
 ## Version Update Policy
@@ -162,4 +163,4 @@ The `dependency-update.yml` workflow runs weekly to:
 - Staging deployment skipped for prereleases
 - Boolean inputs properly handled (not compared as strings)
 
-Last Updated: 2025-09-09
+Last Updated: 2025-09-12

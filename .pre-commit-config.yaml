@@ -2,6 +2,16 @@
 # Tools are managed by mise and hooks use `language: system`
 
 repos:
+  # GitHub Actions workflow validation
+  - repo: local
+    hooks:
+      - id: validate-workflows
+        name: Validate GitHub Actions workflows
+        entry: bash scripts/validate-workflows.sh
+        language: system
+        files: '^\.github/workflows/.*\.ya?ml$'
+        pass_filenames: false
+
   # Gitleaks - Use the version installed by mise
   - repo: local
     hooks:
@@ -74,7 +84,7 @@ repos:
 
   # YAML/JSON formatting and basic checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0 # v5.0.0 is not a valid version
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: check-json
