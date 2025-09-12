@@ -3,11 +3,11 @@ set -uo pipefail
 
 # Local runner for GitHub workflows using act
 # Usage:
-#   scripts/run-workflows-local.sh [--all | --core] [--arch linux/arm64|linux/amd64]
-# Defaults to --all and autodetected container arch.
+#   scripts/run-workflows-local.sh [--all | --core | --security] [--arch linux/arm64|linux/amd64]
+# Defaults to --core and autodetected container arch.
 
 ARCH=""
-MODE="all" # core or all
+MODE="core" # core, security, or all
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -15,6 +15,8 @@ while [[ $# -gt 0 ]]; do
       MODE="all"; shift ;;
     --core)
       MODE="core"; shift ;;
+    --security)
+      MODE="security"; shift ;;
     --arch)
       ARCH="$2"; shift 2 ;;
     *)
@@ -30,11 +32,8 @@ fi
 if ! command -v act >/dev/null; then
   echo "❌ act is required. Install with:"
   echo "  brew install act # macOS" >&2
+  echo "  Or follow: https://github.com/nektos/act#installation" >&2
   exit 1
-fi
-
-if ! command -v helm >/dev/null; then
-  echo "⚠️  helm not found. Helm-related jobs may fail."
 fi
 
 if [[ -z "$ARCH" ]]; then
@@ -46,82 +45,161 @@ if [[ -z "$ARCH" ]]; then
   esac
 fi
 
-# Use a slimmer runner image to reduce pull size
-RUNNER_IMAGE="${ACT_IMAGE:-stashfi/ci-toolbox:24.04}"
-MAP_PLATFORM=("-P" "ubuntu-latest=${RUNNER_IMAGE}" "--container-architecture" "$ARCH")
+# Always use our CI toolbox from GHCR for consistency with GitHub Actions
+RUNNER_IMAGE="ghcr.io/bboissen/ci-toolbox:24.04"
 
-if [[ -n "${GHCR_TOKEN:-}" && -n "${GHCR_USER:-}" ]]; then
-  echo "Logging into ghcr.io as ${GHCR_USER} for runner image"
-  echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || true
-fi
+# Check if we're logged in to GHCR by trying to pull
+echo "📦 Checking CI toolbox availability..."
+if docker pull "${RUNNER_IMAGE}" 2>/dev/null; then
+  echo "✅ Using CI toolbox: ${RUNNER_IMAGE}"
+else
+  echo "⚠️  Failed to pull CI toolbox from GHCR"
+  echo ""
+  echo "Please authenticate with one of these methods:"
+  echo "  1. Interactive: docker login ghcr.io -u <username>"
+  echo "  2. With token: echo \$GITHUB_TOKEN | docker login ghcr.io -u <username> --password-stdin"
+  echo "  3. With gh CLI: gh auth token | docker login ghcr.io -u <username> --password-stdin"
+  echo ""
+  echo "To create a GitHub token: https://github.com/settings/tokens"
+  echo "Required scope: read:packages"
+  echo ""
 
-echo "➡️  Checking runner image: ${RUNNER_IMAGE}"
-if ! docker image inspect "$RUNNER_IMAGE" >/dev/null 2>&1; then
-  echo "❌ Runner image not found: $RUNNER_IMAGE. Build it with: scripts/build_ci_toolbox.sh"
-  exit 1
-fi
-
-set -x
-
-# Helper to run a job and capture result
-run_job() {
-  local wf="$1"; local job="$2"
-  local label="${wf##*/}:${job}"
-  echo "\n=== Running ${label} ===\n"
-  if act push "${MAP_PLATFORM[@]}" --pull=false -W "$wf" -j "$job"; then
-    RESULTS+=("OK ${label}")
+  # Try to help with gh CLI if available
+  if command -v gh >/dev/null 2>&1; then
+    echo "🔧 Detected GitHub CLI. Attempting automatic login..."
+    if gh auth token | docker login ghcr.io -u "$(gh api user --jq .login)" --password-stdin 2>/dev/null; then
+      echo "✅ Logged in via GitHub CLI"
+      # Try pulling again
+      if docker pull "${RUNNER_IMAGE}" 2>/dev/null; then
+        echo "✅ Successfully pulled CI toolbox"
+      else
+        echo "❌ Still couldn't pull. Check your token permissions."
+        exit 1
+      fi
+    else
+      echo "❌ GitHub CLI auth failed. Please login manually."
+      exit 1
+    fi
   else
-    RESULTS+=("FAIL ${label}")
+    exit 1
+  fi
+fi
+
+MAP_PLATFORM=(
+  "-P" "ubuntu-24.04=${RUNNER_IMAGE}"
+  "-P" "ubuntu-latest=${RUNNER_IMAGE}"
+  "--container-architecture" "$ARCH"
+)
+
+echo "🚀 Running workflows locally with act"
+echo "   Mode: ${MODE}"
+echo "   Architecture: ${ARCH}"
+echo "   Runner image: ${RUNNER_IMAGE}"
+echo ""
+
+# Helper to run a workflow/job and capture result
+run_job() {
+  local wf="$1"
+  local job="${2:-}"
+  local label="${wf##*/}"
+  [[ -n "$job" ]] && label="${label}:${job}"
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔧 Running ${label}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Keep it simple - just use the platform mapping and let act handle the rest
+  local cmd=(act push "${MAP_PLATFORM[@]}" -W "$wf")
+  [[ -n "$job" ]] && cmd+=(-j "$job")
+
+  if "${cmd[@]}"; then
+    RESULTS+=("✅ ${label}")
+    return 0
+  else
+    RESULTS+=("❌ ${label}")
+    FAILED+=("${label}")
+    return 1
   fi
 }
 
 RESULTS=()
+FAILED=()
 
-if [[ "$MODE" == "core" ]]; then
-  # Core validation covering the feature work
-  run_job .github/workflows/api-gateway-ci.yml lint-and-format
-  run_job .github/workflows/api-gateway-ci.yml test
-  run_job .github/workflows/api-gateway-ci.yml build
-  run_job .github/workflows/api-gateway-ci.yml vulnerability-scan
+case "$MODE" in
+  core)
+    echo "📦 Running core workflows..."
+    # API Gateway CI
+    run_job .github/workflows/api-gateway-ci.yml test
+    run_job .github/workflows/api-gateway-ci.yml security
+    run_job .github/workflows/api-gateway-ci.yml docker
 
-  # Basic CI jobs
-  run_job .github/workflows/ci.yml api-gateway
-  run_job .github/workflows/ci.yml docker-build
-  run_job .github/workflows/ci.yml helm-lint
+    # Helm validation
+    run_job .github/workflows/helm-validation.yml validate-kong
+    run_job .github/workflows/helm-validation.yml kong-specific-validation
 
-  # Helm chart validation (lint + template + checks)
-  run_job .github/workflows/helm-validation.yml lint-and-validate
-  run_job .github/workflows/helm-validation.yml test-helm-upgrade
-else
-  # Run all push-triggered workflows (will be heavy and slow)
-  # act does not support running all jobs across all workflows in a single command reliably,
-  # so we enumerate key workflows that matter locally.
-  run_job .github/workflows/api-gateway-ci.yml lint-and-format
-  run_job .github/workflows/api-gateway-ci.yml test
-  run_job .github/workflows/api-gateway-ci.yml build
-  run_job .github/workflows/api-gateway-ci.yml vulnerability-scan
+    # CI Toolbox build (dry-run)
+    echo "ℹ️  Skipping CI toolbox build (would push to registry)"
+    ;;
 
-  run_job .github/workflows/ci.yml api-gateway
-  run_job .github/workflows/ci.yml docker-build
-  run_job .github/workflows/ci.yml helm-lint
+  security)
+    echo "🔒 Running security workflows..."
+    # Security & Compliance
+    run_job .github/workflows/security-compliance.yml sbom-scan
+    run_job .github/workflows/security-compliance.yml dependency-check
+    run_job .github/workflows/security-compliance.yml license-check
+    run_job .github/workflows/security-compliance.yml secret-scan
 
-  run_job .github/workflows/helm-validation.yml lint-and-validate
-  run_job .github/workflows/helm-validation.yml test-helm-upgrade
-fi
+    # API Gateway security
+    run_job .github/workflows/api-gateway-ci.yml security
+    ;;
 
-set +x
+  all)
+    echo "🌍 Running all workflows..."
+    # Core workflows
+    run_job .github/workflows/api-gateway-ci.yml test
+    run_job .github/workflows/api-gateway-ci.yml security
+    run_job .github/workflows/api-gateway-ci.yml docker
 
-echo "\n==== Summary ===="
-FAIL_FOUND=0
+    # Helm validation
+    run_job .github/workflows/helm-validation.yml validate-kong
+    run_job .github/workflows/helm-validation.yml kong-specific-validation
+
+    # Security & Compliance
+    run_job .github/workflows/security-compliance.yml sbom-scan
+    run_job .github/workflows/security-compliance.yml dependency-check
+    run_job .github/workflows/security-compliance.yml license-check
+    run_job .github/workflows/security-compliance.yml secret-scan
+
+    # Integration tests (requires Kong setup)
+    echo "ℹ️  Skipping integration tests (requires full Kong setup)"
+    # run_job .github/workflows/api-integration-test.yml integration-test
+    ;;
+esac
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📊 Summary"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 for r in "${RESULTS[@]}"; do
-  echo "$r"
-  [[ "$r" == FAIL* ]] && FAIL_FOUND=1
+  echo "  $r"
 done
 
-if [[ $FAIL_FOUND -eq 0 ]]; then
-  echo "✅ All selected jobs passed"
+if [[ ${#FAILED[@]} -eq 0 ]]; then
+  echo ""
+  echo "🎉 All workflows passed!"
   exit 0
 else
-  echo "❌ Some jobs failed (see logs above), but all were executed"
+  echo ""
+  echo "⚠️  Failed workflows:"
+  for f in "${FAILED[@]}"; do
+    echo "  - $f"
+  done
+  echo ""
+  echo "💡 Tips for debugging:"
+  echo "  - Run individual job: act push -W .github/workflows/<workflow>.yml -j <job>"
+  echo "  - Verbose mode: add -v flag"
+  echo "  - List jobs: act -l"
+  echo "  - Check Docker: docker ps -a"
   exit 1
 fi
