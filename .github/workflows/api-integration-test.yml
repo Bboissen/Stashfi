@@ -107,31 +107,30 @@ jobs:
 
       - name: Configure Kong Routes
         run: |
-          # Add API Gateway as upstream
-          curl -X POST http://localhost:8001/upstreams \
-            --data "name=api-gateway"
-
-          curl -X POST http://localhost:8001/upstreams/api-gateway/targets \
-            --data "target=127.0.0.1:8080" \
-            --data "weight=100"
-
-          # Create service
+          # Create service pointing directly to the API Gateway
           curl -X POST http://localhost:8001/services \
             --data "name=api-gateway-service" \
-            --data "url=http://api-gateway"
+            --data "url=http://127.0.0.1:8080"
 
-          # Create route
+          # Create route for /api prefix
           curl -X POST http://localhost:8001/services/api-gateway-service/routes \
             --data "paths[]=/api" \
             --data "strip_path=true"
 
       - name: Test API Endpoints
         run: |
+          echo "Testing direct API Gateway endpoints..."
+          curl -v http://localhost:8080/health
+          curl -v http://localhost:8080/ready
+
+          echo -e "\nTesting Kong proxy endpoints..."
           # Test health through Kong
-          curl -f http://localhost:8000/api/health || exit 1
+          curl -f -v http://localhost:8000/api/health || exit 1
 
           # Test readiness through Kong
-          curl -f http://localhost:8000/api/ready || exit 1
+          curl -f -v http://localhost:8000/api/ready || exit 1
+
+          echo -e "\nAll tests passed!"
 
       - name: Run API Tests
         run: |
