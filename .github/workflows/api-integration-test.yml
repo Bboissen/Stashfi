@@ -161,11 +161,12 @@ jobs:
       - name: OpenAPI Spec Validation
         run: |
           # Install spectral for OpenAPI linting
-          npm install -g @stoplight/spectral-cli
+          npm install -g @stoplight/spectral-cli@^6
+          spectral --version
 
           # Validate OpenAPI spec
           if [ -f specs/api-gateway.yaml ]; then
-            spectral lint specs/api-gateway.yaml
+            spectral lint -r .spectral.yaml specs/api-gateway.yaml
           fi
 
       - name: Load Testing

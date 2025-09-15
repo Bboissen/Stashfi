@@ -4,10 +4,9 @@ extends:
 formats:
   - oas3
 
-# Pragmatic, industry-standard rules layered on top of spectral:oas
 rules:
   # Allow HTTP servers in dev; keep warning instead of error
-  oas3-server-https: warn
+  oas-server-https: warn
 
   # Operation hygiene
   require-operationId:
