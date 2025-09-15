@@ -70,6 +70,7 @@ jobs:
           # Create Kong configuration
           cat > /tmp/kong.conf << EOF
           prefix = /tmp/kong
+          router_flavor = traditional_compatible
           database = postgres
           pg_host = localhost
           pg_port = 5432
@@ -107,15 +108,25 @@ jobs:
 
       - name: Configure Kong Routes
         run: |
+          set -e
           # Create service pointing directly to the API Gateway
-          curl -X POST http://localhost:8001/services \
+          echo "Creating Kong service..."
+          curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8001/services \
             --data "name=api-gateway-service" \
             --data "url=http://127.0.0.1:8080"
 
-          # Create route for /api prefix
-          curl -X POST http://localhost:8001/services/api-gateway-service/routes \
+          echo "Creating Kong route..."
+          # Use /routes endpoint to avoid any name/path nuances
+          curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8001/routes \
+            --data "service.name=api-gateway-service" \
             --data "paths[]=/api" \
-            --data "strip_path=true"
+            --data "paths[]=/api/" \
+            --data "strip_path=true" \
+            --data "path_handling=v1" \
+            --data "protocols[]=http"
+
+          echo "Current Kong routes:"
+          curl -sS http://127.0.0.1:8001/routes | sed -e 's/{/\n{/g' | head -n 50 || true
 
       - name: Test API Endpoints
         run: |
@@ -124,6 +135,8 @@ jobs:
           curl -v http://localhost:8080/ready
 
           echo -e "\nTesting Kong proxy endpoints..."
+          # small delay to ensure route is visible to the router cache
+          sleep 1
           # Test health through Kong
           curl -f -v http://127.0.0.1:8000/api/health || exit 1
 
