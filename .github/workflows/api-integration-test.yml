@@ -118,12 +118,12 @@ jobs:
           # Create service
           curl -X POST http://localhost:8001/services \
             --data "name=api-gateway-service" \
-            --data "url=http://api-gateway/api"
+            --data "url=http://api-gateway"
 
           # Create route
           curl -X POST http://localhost:8001/services/api-gateway-service/routes \
             --data "paths[]=/api" \
-            --data "strip_path=false"
+            --data "strip_path=true"
 
       - name: Test API Endpoints
         run: |
