@@ -27,6 +27,7 @@ yq = "4.47.1"           # YAML/JSON processor
 jq = "1.8.1"
 "pipx:yamllint" = "1.37.1"
 "npm:@commitlint/cli" = "19.8.1"
+"npm:@stoplight/spectral-cli" = "6.15.0"  # OpenAPI linter
 
 # Git hooks and commit management
 "pipx:pre-commit" = "4.3.0"

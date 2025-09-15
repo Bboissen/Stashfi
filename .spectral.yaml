@@ -14,7 +14,6 @@ rules:
   info-contact: off
   info-license: off
   tag-description: off
-  operation-summary: off
   oas3-unused-component: off
 
   # Keep these as warnings instead of errors
