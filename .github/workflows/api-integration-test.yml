@@ -1,12 +1,14 @@
 name: API Integration Tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, "feat/**" ]
     paths:
       - 'services/api-gateway/**'
       - 'infra/helm/kong/**'
       - 'specs/**'
+      - '.spectral.yaml'
       - '.github/workflows/api-integration-test.yml'
   pull_request:
     branches: [ main ]
@@ -14,6 +16,7 @@ on:
       - 'services/api-gateway/**'
       - 'infra/helm/kong/**'
       - 'specs/**'
+      - '.spectral.yaml'
       - '.github/workflows/api-integration-test.yml'
 
 permissions:
