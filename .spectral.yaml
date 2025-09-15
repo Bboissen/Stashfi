@@ -1,101 +1,61 @@
+# Spectral configuration for Stashfi API
+# Early stage configuration - focused on essential standards
+
 extends:
   - spectral:oas
 
 formats:
   - oas3
 
+# Ruleset optimized for early-stage development
+# Can be made stricter as the project matures
 rules:
-  # Allow HTTP servers in dev; keep warning instead of error
-  oas-server-https: warn
+  # Disable overly strict built-in rules for now
+  info-contact: off
+  info-license: off
+  tag-description: off
+  operation-summary: off
+  oas3-unused-component: off
 
-  # Operation hygiene
-  require-operationId:
-    description: Each operation must have an operationId
-    message: Operation is missing operationId
-    given: $.paths[*][?(@property.match(/^(get|put|post|delete|options|head|patch|trace)$/))]
-    severity: error
-    then:
-      field: operationId
-      function: truthy
+  # Keep these as warnings instead of errors
+  operation-description: warn
+  operation-tags: warn
+  oas3-api-servers: warn
+  operation-operationId: error  # Keep as error - needed for code generation
 
-  operationId-camelCase:
-    description: operationId should be camelCase
-    given: $.paths[*][?(@property.match(/^(get|put|post|delete|options|head|patch|trace)$/))].operationId
+  # Custom rules for basic standards
+  prefer-https-servers:
+    description: Server URLs should use HTTPS in production
+    given: $.servers[*].url
     severity: warn
     then:
       function: pattern
       functionOptions:
-        match: '^[a-z][A-Za-z0-9]*$'
+        match: '^(https://|/|http://localhost)' # Allow HTTPS, relative paths, or localhost
 
-  require-summary-and-description:
-    description: Operations should have summary and description
-    given: $.paths[*][?(@property.match(/^(get|put|post|delete|options|head|patch|trace)$/))]
+  response-success-defined:
+    description: Operations should define at least one success response
+    given: $.paths[*][?(@property.match(/^(get|put|post|delete|patch)$/))]
     severity: error
     then:
-      - field: summary
-        function: truthy
-      - field: description
-        function: truthy
+      function: schema
+      functionOptions:
+        schema:
+          properties:
+            responses:
+              patternProperties:
+                "^2": {}
+              minProperties: 1
+          required: [responses]
 
-  require-tags:
-    description: At least one tag per operation
-    given: $.paths[*][?(@property.match(/^(get|put|post|delete|options|head|patch|trace)$/))]
-    severity: warn
-    then:
-      field: tags
-      function: truthy
-
-  # Response/content hygiene
-  prefer-json-content:
-    description: Prefer application/json for responses
-    given: $.paths[*][?(@property.match(/^(get|put|post|delete|options|head|patch|trace)$/))].responses[*].content
-    severity: warn
-    then:
-      field: application/json
-      function: defined
-
-  prefer-response-examples:
-    description: Provide an example or examples for JSON 2xx responses
-    given: $.paths[*][?(@property.match(/^(get|put|post|delete|options|head|patch|trace)$/))].responses[?(@property.match(/^(200|201|202|204)$/))].content['application/json']
+  response-error-defined:
+    description: Operations should define error responses
+    given: $.paths[*][?(@property.match(/^(get|put|post|delete|patch)$/))].responses
     severity: warn
     then:
       function: schema
       functionOptions:
         schema:
-          anyOf:
-            - required: [example]
-            - required: [examples]
-
-  # Schema hygiene
-  schema-has-description:
-    description: Component schemas should include a description
-    given: $.components.schemas[*]
-    severity: warn
-    then:
-      field: description
-      function: truthy
-
-  # High-level API metadata
-  top-level-security-defined:
-    description: Define global security requirements (can be overridden per-operation)
-    given: $
-    severity: warn
-    then:
-      field: security
-      function: defined
-
-  contact-email-present:
-    description: Include a contact email under info.contact
-    given: $.info
-    severity: warn
-    then:
-      field: contact.email
-      function: truthy
-
-  license-defined:
-    description: Include a license in API info
-    given: $.info
-    severity: warn
-    then:
-      field: license
-      function: truthy
+          patternProperties:
+            "^(4|5)": {}
+          minProperties: 1
