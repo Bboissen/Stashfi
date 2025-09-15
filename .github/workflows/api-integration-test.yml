@@ -31,7 +31,7 @@ jobs:
           POSTGRES_PASSWORD: kong
           POSTGRES_DB: kong
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -120,13 +120,20 @@ jobs:
           curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8001/routes \
             --data "service.name=api-gateway-service" \
             --data "paths[]=/api" \
-            --data "paths[]=/api/" \
             --data "strip_path=true" \
             --data "path_handling=v1" \
             --data "protocols[]=http"
 
           echo "Current Kong routes:"
           curl -sS http://127.0.0.1:8001/routes | sed -e 's/{/\n{/g' | head -n 50 || true
+
+          echo "Waiting for Kong router to apply routes..."
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:8000/api/health > /dev/null; then
+              echo "Kong proxy route is live."; break
+            fi
+            echo "Retry $i/30: route not yet active"; sleep 1
+          done
 
       - name: Test API Endpoints
         run: |
@@ -135,8 +142,6 @@ jobs:
           curl -v http://localhost:8080/ready
 
           echo -e "\nTesting Kong proxy endpoints..."
-          # small delay to ensure route is visible to the router cache
-          sleep 1
           # Test health through Kong
           curl -f -v http://127.0.0.1:8000/api/health || exit 1
 
