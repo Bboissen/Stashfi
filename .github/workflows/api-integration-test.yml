@@ -49,9 +49,10 @@ jobs:
 
       - name: Install Kong
         run: |
-          curl -Lo kong.deb "https://download.konghq.com/gateway-3.x-ubuntu-$(lsb_release -rs)/pool/all/k/kong/kong_3.10.1_amd64.deb"
-          sudo dpkg -i kong.deb
-          rm kong.deb
+          # Add Kong repository for Ubuntu Noble (24.04)
+          curl -1sLf "https://packages.konghq.com/public/gateway-311/config.deb.txt?distro=ubuntu&codename=noble" | sudo tee /etc/apt/sources.list.d/kong-gateway-311.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y kong-enterprise-edition=3.11.0.3
 
       - name: Configure Kong
         run: |
