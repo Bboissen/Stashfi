@@ -125,10 +125,10 @@ jobs:
 
           echo -e "\nTesting Kong proxy endpoints..."
           # Test health through Kong
-          curl -f -v http://localhost:8000/api/health || exit 1
+          curl -f -v http://127.0.0.1:8000/api/health || exit 1
 
           # Test readiness through Kong
-          curl -f -v http://localhost:8000/api/ready || exit 1
+          curl -f -v http://127.0.0.1:8000/api/ready || exit 1
 
           echo -e "\nAll tests passed!"
 
