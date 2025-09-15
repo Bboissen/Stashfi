@@ -49,8 +49,19 @@ jobs:
 
       - name: Install Kong
         run: |
-          # Add Kong repository for Ubuntu Noble (24.04)
-          curl -1sLf "https://packages.konghq.com/public/gateway-311/config.deb.txt?distro=ubuntu&codename=noble" | sudo tee /etc/apt/sources.list.d/kong-gateway-311.list > /dev/null
+          # Install prerequisites for secure APT
+          sudo apt-get update
+          sudo apt-get install -y curl gnupg ca-certificates
+
+          # Add Kong GPG key and repository for Ubuntu Noble (24.04)
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://packages.konghq.com/public/gateway-311/gpg.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/kong-gateway-311-archive-keyring.gpg
+          sudo chmod 0644 /etc/apt/keyrings/kong-gateway-311-archive-keyring.gpg
+
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/kong-gateway-311-archive-keyring.gpg] https://packages.konghq.com/public/gateway-311/deb/ubuntu noble main" \
+            | sudo tee /etc/apt/sources.list.d/kong-gateway-311.list > /dev/null
+
           sudo apt-get update
           sudo apt-get install -y kong-enterprise-edition=3.11.0.3
 
