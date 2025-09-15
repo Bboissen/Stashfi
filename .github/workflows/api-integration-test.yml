@@ -69,6 +69,7 @@ jobs:
         run: |
           # Create Kong configuration
           cat > /tmp/kong.conf << EOF
+          prefix = /tmp/kong
           database = postgres
           pg_host = localhost
           pg_port = 5432
@@ -80,6 +81,7 @@ jobs:
           EOF
 
           # Bootstrap Kong database
+          mkdir -p /tmp/kong
           kong migrations bootstrap -c /tmp/kong.conf
           kong migrations up -c /tmp/kong.conf
           kong migrations finish -c /tmp/kong.conf
