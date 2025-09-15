@@ -1,5 +1,9 @@
 name: Build CI Toolbox
 
+concurrency:
+  group: ci-toolbox-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, "feat/**" ]

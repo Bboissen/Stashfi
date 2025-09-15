@@ -1,5 +1,9 @@
 name: API Gateway CI
 
+concurrency:
+  group: api-gateway-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, "feat/**", "fix/**" ]

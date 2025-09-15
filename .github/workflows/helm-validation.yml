@@ -1,5 +1,9 @@
 name: Helm Chart Validation
 
+concurrency:
+  group: helm-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "chore/**" ]

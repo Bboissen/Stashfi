@@ -1,5 +1,9 @@
 name: Reusable Docker Build
 
+concurrency:
+  group: docker-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_call:
     inputs:
@@ -27,6 +31,7 @@ on:
         description: 'Run security scans on image'
         type: boolean
         default: true
+
     outputs:
       image_digest:
         description: 'Image digest'
@@ -67,6 +72,7 @@ jobs:
           driver-opts: |
             network=host
             image=moby/buildkit:v0.24.0
+          buildkitd-flags: --debug
 
       - name: Log in to Registry
         if: inputs.push
@@ -100,8 +106,14 @@ jobs:
           load: ${{ !inputs.push || env.ACT }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ inputs.registry }}/${{ steps.owner.outputs.owner }}/${{ inputs.image_name }}:buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ inputs.registry }}/${{ steps.owner.outputs.owner }}/${{ inputs.image_name }}:buildcache,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
           # Docker exporter (load: true) does not support attestations (sbom/provenance).
           # Enable them only when pushing to a registry (i.e., using registry exporter).
           sbom: ${{ inputs.scan_image && inputs.push && !env.ACT }}

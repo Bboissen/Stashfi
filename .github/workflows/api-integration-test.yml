@@ -19,6 +19,10 @@ on:
       - '.spectral.yaml'
       - '.github/workflows/api-integration-test.yml'
 
+concurrency:
+  group: api-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -49,6 +53,20 @@ jobs:
         uses: actions/setup-go@v6.0.0
         with:
           go-version: '1.25.1'
+          cache: true
+          cache-dependency-path: services/api-gateway/go.sum
+
+      - name: Cache Kong installation
+        id: cache-kong
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/share/kong
+            /usr/local/kong
+            ~/.kong
+          key: kong-${{ runner.os }}-3.11.0.3
+          restore-keys: |
+            kong-${{ runner.os }}-
 
       - name: Install Kong
         run: |
@@ -95,6 +113,16 @@ jobs:
           kong start -c /tmp/kong.conf
           sleep 5
           curl -i http://localhost:8001/
+
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('services/api-gateway/**/*.go', 'services/api-gateway/go.mod') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-
 
       - name: Build API Gateway
         run: |
@@ -158,10 +186,28 @@ jobs:
           cd services/api-gateway
           go test -v ./... -tags=integration
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Cache npm global packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-global-${{ runner.os }}-spectral-6
+          restore-keys: |
+            npm-global-${{ runner.os }}-
+
       - name: OpenAPI Spec Validation
         run: |
-          # Install spectral for OpenAPI linting
-          npm install -g @stoplight/spectral-cli@^6
+          # Check if spectral is already installed
+          if ! command -v spectral &> /dev/null; then
+            echo "Installing spectral for OpenAPI linting..."
+            npm install -g @stoplight/spectral-cli@^6
+          fi
           spectral --version
 
           # Validate OpenAPI spec
@@ -169,14 +215,30 @@ jobs:
             spectral lint -r .spectral.yaml specs/api-gateway.yaml
           fi
 
+      - name: Cache k6 installation
+        id: cache-k6
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/k6
+          key: k6-${{ runner.os }}-latest
+          restore-keys: |
+            k6-${{ runner.os }}-
+
       - name: Load Testing
         run: |
-          # Install k6
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install -y k6
+          # Install k6 if not cached
+          if [ "${{ steps.cache-k6.outputs.cache-hit }}" != "true" ] && ! command -v k6 &> /dev/null; then
+            echo "Installing k6..."
+            sudo gpg -k
+            sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+            echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+            sudo apt-get update
+            sudo apt-get install -y k6
+            # Copy k6 to cached location
+            sudo cp $(which k6) /usr/local/bin/k6 || true
+          else
+            echo "k6 already available"
+          fi
 
           # Create basic load test
           cat > loadtest.js << 'EOF'
