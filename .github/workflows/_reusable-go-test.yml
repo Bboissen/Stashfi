@@ -78,8 +78,6 @@ jobs:
           working-directory: ${{ inputs.service_path }}
           args: --timeout=5m
           skip-cache: false
-          skip-pkg-cache: false
-          skip-build-cache: false
 
       - name: Check Go formatting
         working-directory: ${{ inputs.service_path }}

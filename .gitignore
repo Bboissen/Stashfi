@@ -186,7 +186,7 @@ services/*/api-gateway
 services/*/*.exe
 /services/api-gateway/api-gateway
 /tests/
-docs/
+# docs/
 
 # Rust
 target/
@@ -222,6 +222,8 @@ claude.md
 *.dbdiagram
 
 # Act local secrets and variables (never commit these)
+config/local/.secrets
+config/local/.vars
 .secrets
 .vars
 
