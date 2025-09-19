@@ -1,288 +1,50 @@
-# GitHub Actions Workflows Documentation
+# GitHub Actions Workflows
 
-## Overview
+## First Steps
+- Clone and enter the repo, then install the pinned tool versions: `git clone https://github.com/Stashfi/Stashfi.git && cd Stashfi && mise install`
+- Run the API Gateway unit tests: `go test ./services/api-gateway/...`
+- Build the gateway image: `docker build -t stashfi/api-gateway:dev ./services/api-gateway`
 
-This repository uses a comprehensive CI/CD pipeline powered by GitHub Actions. Our workflows cover everything from code quality and security to deployment and monitoring.
+Those commands mirror the critical paths exercised by the CI pipelines below.
 
-## Workflow Categories
+## Available Workflows
 
-### 🔧 Core CI/CD Workflows
+### API Gateway CI (`api-gateway-ci.yml`)
+- Triggers on pushes to `main`, feature branches (`feat/**`, `fix/**`), and pull requests that touch the gateway or shared workflow files.
+- Invokes `_reusable-go-test.yml` (Go 1.25.1 with race detector, gofmt check, coverage ≥ 50 %) and `_reusable-security-scan.yml`.
+- Builds the container image with `_reusable-docker-build.yml` and pushes to GHCR when the ref is `main`.
 
-#### 1. **API Gateway CI** (`api-gateway-ci.yml`)
-- **Triggers**: Push to main, PRs
-- **Purpose**: Validates Go code quality, runs tests, builds binaries
-- **Key Features**:
-  - Multi-version Go testing (1.24, 1.25)
-  - Race condition detection
-  - Coverage reporting with 50% threshold
-  - Cross-platform builds (linux/darwin/windows)
-  - Vulnerability scanning
+### API Integration Tests (`api-integration-test.yml`)
+- Spins up Postgres and installs Kong Gateway 3.11 on the runner.
+- Builds and launches the Go API Gateway, configures Kong routes, and verifies `/health` and `/ready` directly and via Kong.
+- Lints `specs/api-gateway.yaml` with Spectral, runs k6 load tests, and executes Go integration tests (`-tags=integration`).
 
-#### 2. **Docker Build & Scan** (`docker-build.yml`)
-- **Triggers**: Push to main, PRs, tags
-- **Purpose**: Build and scan container images
-- **Key Features**:
-  - Multi-architecture builds (amd64, arm64)
-  - Trivy and Snyk vulnerability scanning
-  - SBOM generation
-  - Image signing with Cosign
-  - Hadolint Dockerfile linting
+### CI Toolbox Build (`ci-toolbox-build.yml`)
+- Builds the toolbox image from `infra/containers/ci-toolbox/Dockerfile` for `linux/amd64` and `linux/arm64` using Buildx.
+- Optionally pushes tags (`latest`, `24.04`, per-commit SHA) to `ghcr.io` when running on `main` or when `workflow_dispatch` specifies `push=true`.
 
-#### 3. **Integration Tests** (`integration-test.yml`)
-- **Triggers**: Push to main, PRs, nightly
-- **Purpose**: End-to-end testing with real Kubernetes
-- **Key Features**:
-  - Kind cluster testing
-  - Load testing with k6
-  - Chaos testing support
-  - Smoke tests
-  - Minikube alternative tests
+### Helm Chart Validation (`helm-validation.yml`)
+- Uses `_reusable-helm-validate.yml` to lint the Kong chart with Helm `3.18.6`, kubeconform (Kubernetes `1.31.3` schemas), and Pluto.
+- Rebuilds chart dependencies, inspects `values.yaml` with `yq`, and renders a dry-run manifest to highlight missing limits or security context entries.
 
-### 🔒 Security & Compliance
+### Security & Compliance (`security-compliance.yml`)
+- Generates an SPDX SBOM with Syft, scans it with Grype, and uploads Trivy filesystem and container SARIF reports.
+- Checks Go dependencies with Nancy and `govulncheck`, audits licenses with `go-licenses`, and performs full-history secret detection through the Gitleaks action.
 
-#### 4. **Security Scanning** (`security-scan.yml`)
-- **Triggers**: Push, PRs, weekly schedule
-- **Purpose**: Comprehensive security analysis
-- **Key Features**:
-  - SAST with Gosec, Semgrep, CodeQL
-  - Dependency vulnerability scanning
-  - Secret detection (Gitleaks, TruffleHog)
-  - License compliance checking
-  - Infrastructure security (Checkov, Terrascan)
+## Reusable Workflows
 
-### 📦 Infrastructure Validation
+| File | Purpose |
+| --- | --- |
+| `_reusable-go-test.yml` | Standard Go lint/test job with caching, gofmt enforcement, race tests, and configurable coverage gate. |
+| `_reusable-docker-build.yml` | Buildx-driven Docker build with optional multi-arch push and Trivy image scanning. |
+| `_reusable-helm-validate.yml` | Helm render + kubeconform + Pluto validation for a supplied chart path. |
+| `_reusable-security-scan.yml` | Filesystem security scans (Gitleaks, Gosec, Semgrep, Trivy) with SARIF upload helpers. |
 
-#### 5. **Helm Validation** (`helm-validation.yml`)
-- **Triggers**: Changes to Helm charts
-- **Purpose**: Validate Helm chart configurations
-- **Key Features**:
-  - Chart linting and templating
-  - Dependency validation
-  - Kubernetes API compatibility
-  - Upgrade path testing
-  - Security policy scanning
+## Secrets
+- All workflows rely on the default `GITHUB_TOKEN`; no additional repository secrets are required to run them as configured.
+- Provide extra credentials only when extending workflows (for example Docker Hub credentials for publishing outside GHCR).
 
-#### 6. **Kubernetes Validation** (`k8s-validation.yml`)
-- **Triggers**: Changes to K8s manifests
-- **Purpose**: Validate Kubernetes configurations
-- **Key Features**:
-  - Manifest syntax validation
-  - API deprecation checks
-  - Security policy validation (OPA)
-  - Resource specification checks
-  - RBAC validation
-
-### 🚀 Release & Deployment
-
-#### 7. **Release Automation** (`release.yml`)
-- **Triggers**: Version tags (v*)
-- **Purpose**: Automated release process
-- **Key Features**:
-  - Multi-platform binary builds
-  - Container image publishing
-  - Helm chart packaging
-  - Changelog generation
-  - GitHub Release creation
-  - Staging deployment
-
-### 📊 Monitoring & Maintenance
-
-#### 8. **Performance Benchmarking** (`benchmark.yml`)
-- **Triggers**: Push to main, PRs, weekly
-- **Purpose**: Track performance metrics
-- **Key Features**:
-  - Go benchmarks with regression detection
-  - Load testing with k6
-  - Memory profiling
-  - Historical trend tracking
-  - Automatic regression alerts
-
-#### 9. **Dependency Updates** (`dependency-update.yml`)
-- **Triggers**: Weekly schedule
-- **Purpose**: Keep dependencies current
-- **Key Features**:
-  - Go module updates
-  - Docker base image updates
-  - Helm dependency updates
-  - Automated PR creation
-  - Security audit after updates
-
-#### 10. **PR Automation** (`pr-automation.yml`)
-- **Triggers**: PR events
-- **Purpose**: Streamline PR workflow
-- **Key Features**:
-  - Auto-labeling based on files changed
-  - PR validation (title, description)
-  - Auto-assign reviewers
-  - Size complexity warnings
-  - Test coverage comments
-  - Slash command support
-
-#### 11. **Workflow Dashboard** (`dashboard.yml`)
-- **Triggers**: Weekly schedule
-- **Purpose**: Workflow metrics and status
-- **Key Features**:
-  - Success rate tracking
-  - Performance metrics
-  - Cost analysis
-  - Automated reporting
-
-#### 12. **Cost Analysis** (`cost-analysis.yml`)
-- **Triggers**: Monthly
-- **Purpose**: Track CI/CD costs
-- **Key Features**:
-  - Usage metrics
-  - Cost estimation
-  - Optimization recommendations
-
-#### 13. **Cleanup** (`cleanup.yml`)
-- **Triggers**: Weekly schedule
-- **Purpose**: Repository maintenance
-- **Key Features**:
-  - Artifact cleanup
-  - Workflow run pruning
-  - Container image cleanup
-  - Cache optimization
-
-## Secrets Required
-
-Configure these secrets in your repository settings:
-
-```yaml
-# Required
-GITHUB_TOKEN        # Automatically provided
-
-# Optional but recommended
-CODECOV_TOKEN       # Code coverage reporting
-SNYK_TOKEN         # Snyk vulnerability scanning
-SONAR_TOKEN        # SonarCloud analysis
-DOCKERHUB_USERNAME  # Docker Hub publishing
-DOCKERHUB_TOKEN    # Docker Hub authentication
-SLACK_WEBHOOK_URL  # Slack notifications
-NVD_API_KEY        # NVD vulnerability database
-DATREE_TOKEN       # Datree policy checks
-GITLEAKS_LICENSE   # Gitleaks enhanced features
-```
-
-## Workflow Triggers
-
-| Trigger Type | Description | Workflows |
-|-------------|-------------|-----------|
-| **Push** | On code push to branches | Most CI workflows |
-| **Pull Request** | On PR open/sync/review | Validation and testing |
-| **Schedule** | Cron-based scheduling | Security, cleanup, benchmarks |
-| **Tag** | On version tags | Release automation |
-| **Manual** | workflow_dispatch | All workflows support this |
-
-## Best Practices
-
-### 1. **Caching Strategy**
-- Go module caching
-- Docker layer caching
-- Dependency caching
-- Build artifact caching
-
-### 2. **Parallelization**
-- Matrix builds for multiple versions
-- Parallel job execution
-- Concurrent testing
-
-### 3. **Conditional Execution**
-- Path filters to skip unnecessary runs
-- Conditional steps based on context
-- Smart PR automation
-
-### 4. **Security**
-- Minimal permissions
-- Secret scanning
-- Dependency updates
-- Vulnerability scanning
-
-## Monitoring
-
-### Success Metrics
-- **Target CI Time**: <10 minutes
-- **Success Rate**: >95%
-- **Coverage**: >50%
-- **Security**: Zero critical vulnerabilities
-
-### Key Performance Indicators
-- Average workflow duration
-- Success/failure rates
-- Resource utilization
-- Cost per workflow run
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Workflow Timeouts**
-   - Check for infinite loops
-   - Verify network connectivity
-   - Review resource limits
-
-2. **Permission Errors**
-   - Verify GITHUB_TOKEN permissions
-   - Check repository settings
-   - Review workflow permissions
-
-3. **Cache Misses**
-   - Verify cache keys
-   - Check cache size limits
-   - Review cache restoration
-
-4. **Test Failures**
-   - Check for race conditions
-   - Verify test data
-   - Review environment variables
-
-## Local Testing
-
-Test workflows locally using [act](https://github.com/nektos/act):
-
-```bash
-# Install act
-brew install act
-
-# List available workflows
-act -l
-
-# Run specific workflow
-act -W .github/workflows/api-gateway-ci.yml
-
-# Run with specific event
-act pull_request -W .github/workflows/pr-automation.yml
-```
-
-## Contributing
-
-When adding new workflows:
-
-1. Follow naming convention: `feature-name.yml`
-2. Include comprehensive documentation
-3. Add status badge to README
-4. Update dashboard workflow
-5. Consider cost implications
-6. Add to cleanup routine if needed
-
-## Cost Optimization
-
-### Tips to Reduce Costs
-1. Use conditional workflows
-2. Implement effective caching
-3. Optimize matrix strategies
-4. Use workflow_run for chaining
-5. Clean up artifacts regularly
-6. Consider self-hosted runners for high-volume
-
-## Support
-
-- View all workflows: [Actions Tab](../../actions)
-- Check security alerts: [Security Tab](../../security)
-- Review insights: [Insights Tab](../../pulse)
-- Report issues: [Issues Tab](../../issues)
-
----
-
-*Last updated: 2025*
-*Maintained by: Platform Team*
+## Debugging Tips
+- Review the **Actions** tab logs; each job logs tool versions up front for reproducibility.
+- Re-run jobs with `workflow_dispatch` if you need to reproduce a failure after updating variables or secrets.
+- Use [`act`](https://github.com/nektos/act) locally for quick iteration: `act -W .github/workflows/api-gateway-ci.yml pull_request`.
