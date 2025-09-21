@@ -18,6 +18,7 @@ paths = [
   '''testdata''',
   '''.*_test\.go''',
   '''docs/.*\.md''',
+  '''services/api-gateway/README\.md''',
   '''scripts/setup-secret-scanning\.sh''',  # Contains example secrets for testing
   '''.github/workflows/.*\.yml''',  # CI/CD workflows with localhost URLs
   '''.git/.*''',  # Exclude .git directory
