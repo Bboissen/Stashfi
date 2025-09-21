@@ -63,3 +63,19 @@ This project is currently source-available. A formal open-source license will be
 - **Follow Progress**: Watch or star the repository.
 
 ---
+
+## 🧪 Local Dev Quickstart (kind + Kong)
+Spin up a local Kubernetes cluster with the API Gateway and Kong routing in one command.
+
+- Prereqs: `mise install` (installs `kind`, `kubectl`, `helm`, etc.)
+- Start stack:
+  - `scripts/kind-up.sh --build-image --install-kong`
+- Verify via Kong proxy (NodePorts mapped by kind):
+  - `curl -s http://localhost:32080/health`
+  - `curl -s http://localhost:32080/api/v1/status`
+  - Open API docs at `http://localhost:32080/docs`
+
+Notes
+- The script prefers a local override at `infra/helm/kong/values.local.yaml`; if missing, it uses the bundled `infra/helm/kong/values.local.yaml.example` which enables NodePorts for local access.
+
+Tear down when done: `scripts/kind-down.sh`

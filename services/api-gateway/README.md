@@ -28,6 +28,20 @@ LOG_LEVEL=DEBUG LOG_FORMAT=pretty go run .
 go test ./...
 ```
 
+### One‑liner: kind + Kong quickstart
+This starts a local kind cluster, builds and loads the API gateway image, applies k8s manifests, and installs Kong with DB‑less routing to the gateway and docs. If `infra/helm/kong/values.local.yaml` is not present, the script falls back to the tracked `infra/helm/kong/values.local.yaml.example`.
+
+```bash
+# From the repo root
+scripts/kind-up.sh --build-image --install-kong
+
+# Then verify via Kong proxy (NodePorts mapped by kind):
+curl -s http://localhost:32080/health | jq .
+curl -s http://localhost:32080/ready | jq .
+curl -s http://localhost:32080/api/v1/status | jq .
+# Open API docs UI served via Kong at http://localhost:32080/docs
+```
+
 ## Configuration
 | Variable | Description | Default |
 | --- | --- | --- |
@@ -46,6 +60,18 @@ The binary also supports `--help` and `--version` flags for quick introspection.
 | `GET` | `/health` | Liveness signal. |
 | `GET` | `/ready` | Readiness signal. |
 | `GET` | `/api/v1/status` | Service metadata (name, version, status, timestamp). |
+| `*` | `/api/v1/orders[/**]` | Proxies to the Order service (path prefix `/api/v1` stripped). |
+| `GET` | `/openapi/public.yaml` | Serves the public OpenAPI spec (public listener). |
+| `GET` | `/openapi/private.yaml` | Serves the private OpenAPI spec (private listener). |
+
+Private listener endpoints
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/internal/v1/status` | Build/runtime/config status JSON. |
+| `POST` | `/internal/v1/echo` | Diagnostic echo of headers/body. |
+| `GET` | `/metrics` | Minimal Prometheus-style metrics. |
+| `GET` | `/debug/pprof/*` | Go pprof endpoints. |
+| `GET` | `/debug/vars` | Go expvar JSON. |
 
 Responses are JSON encoded and timestamped (Unix seconds).
 
@@ -65,7 +91,9 @@ docker run --rm -p 8080:8080 stashfi/api-gateway:dev
 
 ## Deployment
 - **Kubernetes manifests:** `infra/k8s/api-gateway-deployment.yaml` and `infra/k8s/api-gateway-service.yaml` deploy the service into the `stashfi` namespace.
-- **Kong integration:** `infra/helm/kong/values.yaml` routes `/health`, `/ready`, and `/api/v1` through Kong using the DB-less configuration. Apply with `helm upgrade --install stashfi-kong infra/helm/kong`.
+- **Private Service:** `infra/k8s/api-gateway-private-service.yaml` exposes the private listener (ClusterIP on port 8081) only inside the cluster.
+- **Kong integration:** `infra/helm/kong/values.local.yaml` routes `/health`, `/ready`, and `/api/v1` through Kong using the DB-less configuration for local dev. Apply with `helm upgrade --install stashfi-kong infra/helm/kong -n kong -f infra/helm/kong/values.local.yaml`.
+ - **Public API Docs (Scalar):** `infra/k8s/public-api-docs-*` deploy a docs UI; Kong routes `/docs` to that service.
 
 ## Logging & Safety Nets
 - Middleware logs every request with method, path, status, remote address, and duration.
@@ -73,3 +101,30 @@ docker run --rm -p 8080:8080 stashfi/api-gateway:dev
 - Graceful shutdown waits up to 30 seconds for in-flight requests to finish when SIGINT or SIGTERM is received.
 
 Keep this document in sync when you add new endpoints, environment variables, or dependencies.
+
+## Order Service Routing
+- Incoming requests under `/api/v1/orders` are forwarded to the configured `ORDER_SERVICE_URL`.
+- The gateway strips the public prefix (default `/api/v1`) before forwarding. Example:
+  - Request: `GET /api/v1/orders/123` -> Upstream: `GET /orders/123`.
+
+### Config reference (env)
+- `ORDER_SERVICE_URL` (default: `http://localhost:8081` locally; `http://order-service.stashfi.svc.cluster.local:8080` in k8s)
+- `API_STRIP_PREFIX` (default: `/api/v1`)
+- `REQUEST_TIMEOUT_MS` (default: `5000`)
+- `AUTH_DISABLE` (default: `false` in prod, recommend `true` locally until JWT issuer is ready)
+- `JWT_HS256_SECRET` (required when auth enabled; HS256)
+- `RATE_LIMIT_ENABLED` (default: `false`)
+- `RATE_LIMIT_RPS` (default: `10`)
+- `RATE_LIMIT_BURST` (default: `20`)
+
+## OpenAPI & Spectral
+- Public spec: `specs/public-api.yaml`
+- Private spec (placeholder): `specs/private-api.yaml`
+- Full gateway spec (includes health/ready): `specs/api-gateway.yaml`
+- Lint with Spectral (examples):
+  - `npx @stoplight/spectral-cli lint specs/public-api.yaml`
+  - `docker run --rm -v "$PWD":/work -w /work stoplight/spectral:latest lint specs/public-api.yaml`
+
+Spec Endpoints
+- Public listener: `GET /openapi/public.yaml`
+- Private listener: `GET /openapi/private.yaml`
