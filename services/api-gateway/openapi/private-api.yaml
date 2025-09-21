@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: Stashfi Private API
+  description: Internal API surface for operational/admin actions behind the private gateway listener
+  version: 0.1.0
+  contact:
+    name: Stashfi Team
+
+servers:
+  - url: https://internal-api.stashfi.example
+    description: Private/internal (placeholder)
+  - url: http://localhost:8081
+    description: Local private listener (if enabled)
+
+paths:
+  /internal/v1/status:
+    get:
+      summary: Internal status
+      description: Returns runtime, build, and configuration details for the gateway
+      operationId: getInternalStatus
+      tags: [Internal]
+      responses:
+        '200':
+          description: Status details
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Internal error
+
+  /internal/v1/echo:
+    post:
+      summary: Echo request
+      description: Echos request method, path, headers, and body for diagnostics
+      operationId: postInternalEcho
+      tags: [Internal]
+      responses:
+        '200':
+          description: Echo response
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad request
+        '500':
+          description: Internal error
+
+tags:
+  - name: Internal
+    description: Internal operations (subject to change)

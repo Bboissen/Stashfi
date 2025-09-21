@@ -2,17 +2,24 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"flag"
-	"fmt"
-	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
+    "context"
+    "encoding/json"
+    "expvar"
+    "flag"
+    "fmt"
+    "errors"
+    "io"
+    "log/slog"
+    "net"
+    "net/http"
+    "net/http/pprof"
+    "os"
+    "os/signal"
+    "runtime"
+    "strconv"
+    "strings"
+    "syscall"
+    "time"
 )
 
 const (
@@ -28,8 +35,14 @@ var (
 )
 
 type Server struct {
-	handler http.Handler
-	logger  *slog.Logger
+	handler        http.Handler // public handler (for back-compat in tests/CLI)
+	publicHandler  http.Handler
+	privateHandler http.Handler
+	logger         *slog.Logger
+	cfg            Config
+	rl             *rateLimiter
+	orders         http.Handler // reverse proxy to order service with per-route middleware
+	transport      http.RoundTripper
 }
 
 func NewServer() *Server {
@@ -38,9 +51,18 @@ func NewServer() *Server {
 	// Set as default logger
 	slog.SetDefault(logger)
 
+	cfg := LoadConfig()
+
 	s := &Server{
 		logger: logger,
+		cfg:    cfg,
 	}
+
+	if cfg.RateLimitEnabled {
+		s.rl = newRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
+	}
+	// default transport with sane timeouts
+	s.transport = defaultHTTPTransport()
 
 	s.setupRoutes()
 	return s
@@ -168,19 +190,159 @@ func isProduction() bool {
 }
 
 func (s *Server) setupRoutes() {
-	mux := http.NewServeMux()
+	// Public mux
+	pub := http.NewServeMux()
+	pub.HandleFunc("GET /health", s.handleHealth())
+	pub.HandleFunc("GET /ready", s.handleReady())
+	pub.HandleFunc("GET /api/v1/status", s.handleAPIStatus())
+	// Serve OpenAPI spec (public)
+	pub.HandleFunc("GET /openapi/public.yaml", s.handleOpenAPIPublic())
 
-	// Go 1.22+ method-based routing with built-in router
-	mux.HandleFunc("GET /health", s.handleHealth())
-	mux.HandleFunc("GET /ready", s.handleReady())
-	mux.HandleFunc("GET /api/v1/status", s.handleAPIStatus())
+	// Reverse proxy routes for the Order service
+	s.orders = s.withRouteSecurity(s.proxyTo(s.cfg.OrderServiceURL, s.cfg.APIStripPrefix))
+	pub.Handle("/api/v1/orders", s.orders)
+	pub.Handle("/api/v1/orders/", s.orders)
 
 	// Future routes with path parameters would look like:
-	// mux.HandleFunc("GET /api/v1/users/{id}", s.handleGetUser())
-	// mux.HandleFunc("POST /api/v1/users", s.handleCreateUser())
+	// pub.HandleFunc("GET /api/v1/users/{id}", s.handleGetUser())
+	// pub.HandleFunc("POST /api/v1/users", s.handleCreateUser())
 
-	// Apply middleware chain
-	s.handler = s.loggingMiddleware(s.recoveryMiddleware(mux))
+	// Private mux (internal endpoints)
+	priv := http.NewServeMux()
+	priv.HandleFunc("GET /health", s.handleHealth())
+	priv.HandleFunc("GET /ready", s.handleReady())
+	// Private OpenAPI spec
+	priv.HandleFunc("GET /openapi/private.yaml", s.handleOpenAPIPrivate())
+	// Internal API group
+	priv.HandleFunc("GET /internal/v1/status", s.handleInternalStatus())
+	priv.HandleFunc("POST /internal/v1/echo", s.handleInternalEcho())
+	// Debug/metrics endpoints (standard internal routes)
+	priv.Handle("/debug/vars", expvar.Handler())
+	// pprof endpoints
+	priv.HandleFunc("/debug/pprof/", pprof.Index)
+	priv.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	priv.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	priv.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	priv.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	priv.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	priv.Handle("/debug/pprof/block", pprof.Handler("block"))
+	priv.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	priv.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	priv.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	priv.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	// Minimal Prometheus-style metrics
+	priv.HandleFunc("GET /metrics", s.handleMetrics())
+
+	// Apply middleware chains
+	chain := func(h http.Handler) http.Handler {
+		return s.loggingMiddleware(s.requestIDMiddleware(s.recoveryMiddleware(h)))
+	}
+	s.publicHandler = chain(pub)
+	s.privateHandler = chain(priv)
+	s.handler = s.publicHandler
+}
+
+var startTime = time.Now()
+
+func (s *Server) handleInternalStatus() http.HandlerFunc {
+	type resp struct {
+		Service          string `json:"service"`
+		Version          string `json:"version"`
+		BuildTime        string `json:"build_time"`
+		GitCommit        string `json:"git_commit"`
+		Environment      string `json:"environment"`
+		UptimeSeconds    int64  `json:"uptime_seconds"`
+		GoVersion        string `json:"go_version"`
+		Goroutines       int    `json:"goroutines"`
+		NumCPU           int    `json:"num_cpu"`
+		RateLimitEnabled bool   `json:"rate_limit_enabled"`
+		AuthEnabled      bool   `json:"auth_enabled"`
+		OrderServiceURL  string `json:"order_service_url"`
+		RequestTimeoutMS int64  `json:"request_timeout_ms"`
+		Timestamp        int64  `json:"timestamp"`
+	}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		r := resp{
+			Service:          "api-gateway",
+			Version:          Version,
+			BuildTime:        BuildTime,
+			GitCommit:        GitCommit,
+			Environment:      getEnvironmentName(),
+			UptimeSeconds:    int64(time.Since(startTime).Seconds()),
+			GoVersion:        runtime.Version(),
+			Goroutines:       runtime.NumGoroutine(),
+			NumCPU:           runtime.NumCPU(),
+			RateLimitEnabled: s.cfg.RateLimitEnabled,
+			AuthEnabled:      s.cfg.AuthEnabled,
+			OrderServiceURL:  s.cfg.OrderServiceURL,
+			RequestTimeoutMS: int64(s.cfg.RequestTimeout / time.Millisecond),
+			Timestamp:        time.Now().Unix(),
+		}
+		s.respondJSON(w, http.StatusOK, r)
+	}
+}
+
+func (s *Server) handleInternalEcho() http.HandlerFunc {
+	type echoResp struct {
+		Headers map[string]string `json:"headers"`
+		Body    string            `json:"body"`
+		Method  string            `json:"method"`
+		Path    string            `json:"path"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Limit body to avoid abuse
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
+		b, _ := io.ReadAll(r.Body)
+		headers := make(map[string]string, len(r.Header))
+		for k, v := range r.Header {
+			headers[k] = strings.Join(v, ",")
+		}
+		s.respondJSON(w, http.StatusOK, echoResp{
+			Headers: headers,
+			Body:    string(b),
+			Method:  r.Method,
+			Path:    r.URL.Path,
+		})
+	}
+}
+
+func (s *Server) handleMetrics() http.HandlerFunc {
+	// Minimal text exposition for Prometheus scraping
+	// For full metrics, integrate prometheus/client_golang in the future.
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		now := time.Now()
+		lines := []string{
+			"# HELP process_uptime_seconds Process uptime in seconds.",
+			"# TYPE process_uptime_seconds gauge",
+			"process_uptime_seconds " + strconv.FormatFloat(time.Since(startTime).Seconds(), 'f', 3, 64),
+			"# HELP go_goroutines Number of goroutines.",
+			"# TYPE go_goroutines gauge",
+			"go_goroutines " + strconv.Itoa(runtime.NumGoroutine()),
+			"# HELP app_info Build and configuration info.",
+			"# TYPE app_info gauge",
+			fmt.Sprintf("app_info{version=\"%s\",git_commit=\"%s\",environment=\"%s\"} 1", Version, GitCommit, getEnvironmentName()),
+			"# HELP scrape_timestamp_seconds Unix timestamp of this scrape.",
+			"# TYPE scrape_timestamp_seconds gauge",
+			fmt.Sprintf("scrape_timestamp_seconds %d", now.Unix()),
+		}
+		for i := range lines {
+			_, _ = w.Write([]byte(lines[i]))
+			_, _ = w.Write([]byte{'\n'})
+		}
+	}
+}
+
+func defaultHTTPTransport() http.RoundTripper {
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 }
 
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
@@ -344,43 +506,68 @@ func main() {
 		host = defaultHost
 	}
 
-	addr := fmt.Sprintf("%s:%s", host, port)
+	// Private listener port
+	privatePort := os.Getenv("PRIVATE_PORT")
+	if privatePort == "" {
+		privatePort = "8081"
+	}
 
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      server.handler,
+	publicAddr := fmt.Sprintf("%s:%s", host, port)
+	privateAddr := fmt.Sprintf("%s:%s", host, privatePort)
+
+	pubSrv := &http.Server{
+		Addr:         publicAddr,
+		Handler:      server.publicHandler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	privSrv := &http.Server{
+		Addr:         privateAddr,
+		Handler:      server.privateHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
 	// Log startup configuration
-	server.logger.Info("starting API gateway server",
-		"address", addr,
+	server.logger.Info("starting API gateway servers",
+		"public", publicAddr,
+		"private", privateAddr,
 		"log_level", os.Getenv("LOG_LEVEL"),
 		"log_format", os.Getenv("LOG_FORMAT"),
-		"environment", getEnvironmentName())
+		"environment", getEnvironmentName(),
+		"order_service", server.cfg.OrderServiceURL)
 
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			server.logger.Error("failed to start server", "error", err)
-			os.Exit(1)
-		}
-	}()
+	errCh := make(chan error, 2)
+	go func() { errCh <- listenHTTP(pubSrv) }()
+	go func() { errCh <- listenHTTP(privSrv) }()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	server.logger.Info("shutting down server...")
+	select {
+	case sig := <-quit:
+		server.logger.Info("shutdown signal received", "signal", sig.String())
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			server.logger.Error("server error", "error", err)
+		}
+	}
+
+	server.logger.Info("shutting down servers...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		server.logger.Error("server forced to shutdown", "error", err)
-		return
-	}
+	_ = pubSrv.Shutdown(ctx)
+	_ = privSrv.Shutdown(ctx)
+	server.logger.Info("shutdown complete")
+}
 
-	server.logger.Info("server shutdown complete")
+func listenHTTP(srv *http.Server) error {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

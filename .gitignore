@@ -188,6 +188,9 @@ services/*/*.exe
 /tests/
 # docs/
 
+# Go test caches (local only)
+services/api-gateway/.test-cache/
+
 # Rust
 target/
 **/target/

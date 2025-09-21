@@ -1,9 +1,10 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "strings"
 )
 
 func TestNewServer(t *testing.T) {
@@ -51,7 +52,7 @@ func TestReadyEndpoint(t *testing.T) {
 }
 
 func TestAPIStatusEndpoint(t *testing.T) {
-	server := NewServer()
+    server := NewServer()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -61,6 +62,69 @@ func TestAPIStatusEndpoint(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
+}
+
+func TestOpenAPIPublicYAMLEndpoint(t *testing.T) {
+    server := NewServer()
+    req := httptest.NewRequest("GET", "/openapi/public.yaml", nil)
+    w := httptest.NewRecorder()
+    server.handler.ServeHTTP(w, req)
+    if w.Code != http.StatusOK {
+        t.Fatalf("expected 200, got %d", w.Code)
+    }
+    if ct := w.Header().Get("Content-Type"); ct == "" {
+        t.Fatalf("expected content-type, got empty")
+    }
+}
+
+func TestPrivateStatusEndpoint(t *testing.T) {
+    server := NewServer()
+    req := httptest.NewRequest("GET", "/internal/v1/status", nil)
+    w := httptest.NewRecorder()
+    server.privateHandler.ServeHTTP(w, req)
+    if w.Code != http.StatusOK {
+        t.Fatalf("expected 200, got %d", w.Code)
+    }
+    if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+        t.Fatalf("expected application/json, got %s", ct)
+    }
+}
+
+func TestPrivateMetrics(t *testing.T) {
+    server := NewServer()
+    req := httptest.NewRequest("GET", "/metrics", nil)
+    w := httptest.NewRecorder()
+    server.privateHandler.ServeHTTP(w, req)
+    if w.Code != http.StatusOK {
+        t.Fatalf("expected 200, got %d", w.Code)
+    }
+    if ct := w.Header().Get("Content-Type"); ct == "" {
+        t.Fatalf("expected content type, got empty")
+    }
+    if !strings.Contains(w.Body.String(), "process_uptime_seconds") {
+        t.Fatalf("expected metrics to contain process_uptime_seconds")
+    }
+}
+
+func TestPrivatePprofIndex(t *testing.T) {
+    server := NewServer()
+    req := httptest.NewRequest("GET", "/debug/pprof/", nil)
+    w := httptest.NewRecorder()
+    server.privateHandler.ServeHTTP(w, req)
+    if w.Code != http.StatusOK {
+        t.Fatalf("expected 200, got %d", w.Code)
+    }
+}
+
+func TestPrivateEcho(t *testing.T) {
+    server := NewServer()
+    req := httptest.NewRequest("POST", "/internal/v1/echo", strings.NewReader("hello"))
+    req.Header.Set("X-Test", "1")
+    w := httptest.NewRecorder()
+    server.privateHandler.ServeHTTP(w, req)
+    if w.Code != http.StatusOK {
+        t.Fatalf("expected 200, got %d", w.Code)
+    }
 }
 
 func TestGetLogLevel(t *testing.T) {

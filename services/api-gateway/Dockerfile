@@ -25,6 +25,6 @@ COPY --chown=appuser:appuser --from=builder /app/api-gateway .
 
 USER appuser
 
-EXPOSE 8080
+EXPOSE 8080 8081
 
 CMD ["./api-gateway"]
