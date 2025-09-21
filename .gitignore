@@ -186,7 +186,7 @@ services/*/api-gateway
 services/*/*.exe
 /services/api-gateway/api-gateway
 /tests/
-# docs/
+/docs/*
 
 # Go test caches (local only)
 services/api-gateway/.test-cache/
