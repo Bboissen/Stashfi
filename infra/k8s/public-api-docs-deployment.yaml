@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-api-docs
+  namespace: stashfi
+  labels:
+    app: public-api-docs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: public-api-docs
+  template:
+    metadata:
+      labels:
+        app: public-api-docs
+    spec:
+      containers:
+        - name: scalar
+          image: ghcr.io/scalar/scalar:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SCALAR_SPEC_URL
+              value: "http://api-gateway-service.stashfi.svc.cluster.local:8080/openapi/public.yaml"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP

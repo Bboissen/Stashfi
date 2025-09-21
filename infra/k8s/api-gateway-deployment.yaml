@@ -25,9 +25,14 @@ spec:
         - containerPort: 8080
           name: http
           protocol: TCP
+        - containerPort: 8081
+          name: http-private
+          protocol: TCP
         env:
         - name: PORT
           value: "8080"
+        - name: PRIVATE_PORT
+          value: "8081"
         - name: HOST
           value: "0.0.0.0"
         - name: ENV

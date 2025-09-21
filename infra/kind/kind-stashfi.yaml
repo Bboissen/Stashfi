@@ -1,0 +1,17 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+# Kind cluster config for Stashfi local dev
+# - Maps Kong proxy NodePorts to localhost for easy access
+# - Provide the cluster name via CLI: --name stashfi
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Kong HTTP proxy
+      - containerPort: 32080
+        hostPort: 32080
+        protocol: TCP
+      # Kong HTTPS proxy
+      - containerPort: 32443
+        hostPort: 32443
+        protocol: TCP
+  - role: worker

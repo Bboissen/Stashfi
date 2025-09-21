@@ -1,163 +1,157 @@
-# Kong configuration for Stashfi - Local Development
-# Using DB-less mode initially for simplicity
+# Kong configuration for Stashfi - Base Defaults
+# DB-less mode by default; override per environment using values.local.yaml or values.prod.yaml
 
-# Kong image configuration
-image:
-  repository: kong
-  tag: "3.9.1"
-  pullPolicy: IfNotPresent
+kong:
+  # Kong image configuration
+  image:
+    repository: kong
+    tag: "3.9.1"
+    pullPolicy: IfNotPresent
 
-# Environment configuration
-env:
-  database: "off"  # DB-less mode
-  nginx_worker_processes: "2"
-  proxy_access_log: /dev/stdout
-  admin_access_log: /dev/stdout
-  admin_gui_access_log: /dev/stdout
-  portal_api_access_log: /dev/stdout
-  proxy_error_log: /dev/stderr
-  admin_error_log: /dev/stderr
-  admin_gui_error_log: /dev/stderr
-  portal_api_error_log: /dev/stderr
-  prefix: /kong_prefix/
-  log_level: info
+  # Environment configuration
+  env:
+    database: "off"  # DB-less mode
+    nginx_worker_processes: "2"
+    proxy_access_log: /dev/stdout
+    admin_access_log: /dev/stdout
+    admin_gui_access_log: /dev/stdout
+    portal_api_access_log: /dev/stdout
+    proxy_error_log: /dev/stderr
+    admin_error_log: /dev/stderr
+    admin_gui_error_log: /dev/stderr
+    portal_api_error_log: /dev/stderr
+    prefix: /kong_prefix/
+    log_level: info
 
-# Admin API configuration
-# NOTE: In production, use ClusterIP and access via kubectl port-forward or internal services only
-admin:
-  enabled: true
-  type: ClusterIP  # Changed from NodePort for security - admin API should not be publicly exposed
-  http:
-    enabled: true
-    servicePort: 8001
-    containerPort: 8001
-    # nodePort removed - not needed for ClusterIP
-  tls:
+  # Admin API configuration (disabled by default; enable only for secure/internal access)
+  admin:
     enabled: false
 
-# Proxy configuration
-proxy:
-  enabled: true
-  type: NodePort
-  http:
+  # Proxy configuration
+  proxy:
     enabled: true
-    servicePort: 80
-    containerPort: 8000
-    nodePort: 32080
-  tls:
+    type: ClusterIP
+    http:
+      enabled: true
+      servicePort: 80
+      containerPort: 8000
+    tls:
+      enabled: true
+      servicePort: 443
+      containerPort: 8443
+
+  # Status endpoint
+  status:
     enabled: true
-    servicePort: 443
-    containerPort: 8443
-    nodePort: 32443
+    http:
+      enabled: true
+      containerPort: 8100
 
-# Status endpoint
-status:
-  enabled: true
-  http:
-    enabled: true
-    containerPort: 8100
+  # DB-less configuration
+  dblessConfig:
+    config: |
+      _format_version: "3.0"
+      _transform: true
 
-# DB-less configuration
-dblessConfig:
-  config: |
-    _format_version: "3.0"
-    _transform: true
+      services:
+      - name: health-check
+        url: http://api-gateway-service.stashfi.svc.cluster.local:8080
+        routes:
+        - name: health-route
+          paths:
+          - /health
+          strip_path: false
+        - name: readiness-route
+          paths:
+          - /ready
+          strip_path: false
 
-    services:
-    - name: health-check
-      url: http://api-gateway-service:8080
-      routes:
-      - name: health-route
-        paths:
-        - /health
-        strip_path: false
-      - name: readiness-route
-        paths:
-        - /ready
-        strip_path: false
+      - name: api-v1
+        url: http://api-gateway-service.stashfi.svc.cluster.local:8080
+        routes:
+        - name: api-v1-route
+          paths:
+          - /api/v1
+          strip_path: false
 
-    - name: api-v1
-      url: http://api-gateway-service:8080
-      routes:
-      - name: api-v1-route
-        paths:
-        - /api/v1
-        strip_path: false
+      - name: public-api-docs
+        url: http://public-api-docs.stashfi.svc.cluster.local:8080
+        routes:
+        - name: docs-route
+          paths:
+          - /docs
+          strip_path: false
 
-# Enterprise features (disabled for OSS)
-enterprise:
-  enabled: false
+  # Enterprise/UI components disabled
+  enterprise:
+    enabled: false
+  manager:
+    enabled: false
+  portal:
+    enabled: false
 
-# Manager (Kong Manager UI) - not available in OSS
-manager:
-  enabled: false
+  # Disable the Kong Ingress Controller (using traditional DB-less config)
+  ingressController:
+    enabled: false
 
-# Portal (Developer Portal) - not available in OSS
-portal:
-  enabled: false
+  # PostgreSQL (disabled for DB-less mode)
+  postgresql:
+    enabled: false
 
-# Ingress Controller
-ingressController:
-  enabled: false  # Using Kong in traditional mode, not as ingress controller
+  # Resource configuration
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 
-# PostgreSQL (disabled for DB-less mode)
-postgresql:
-  enabled: false
+  # Autoscaling
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
 
-# Resource configuration
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
+  # Pod configuration
+  replicaCount: 1
 
-# Autoscaling
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8100"
+    prometheus.io/path: "/metrics"
 
-# Pod configuration
-replicaCount: 1
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
 
-podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "8100"
-  prometheus.io/path: "/metrics"
+  # Health checks (reduced for local development)
+  livenessProbe:
+    httpGet:
+      path: /status
+      port: status
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 2
 
-# Security context
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 1000
+  readinessProbe:
+    httpGet:
+      path: /status/ready
+      port: status
+    initialDelaySeconds: 3
+    periodSeconds: 3
+    timeoutSeconds: 2
+    failureThreshold: 2
 
-# Health checks (reduced for local development)
-livenessProbe:
-  httpGet:
-    path: /status
-    port: status
-  initialDelaySeconds: 5
-  periodSeconds: 5
-  timeoutSeconds: 2
-  failureThreshold: 2
+  # Service Monitor for Prometheus (if installed)
+  serviceMonitor:
+    enabled: false
 
-readinessProbe:
-  httpGet:
-    path: /status/ready
-    port: status
-  initialDelaySeconds: 3
-  periodSeconds: 3
-  timeoutSeconds: 2
-  failureThreshold: 2
-
-# Service Monitor for Prometheus (if installed)
-serviceMonitor:
-  enabled: false
-
-# Pod Disruption Budget
-podDisruptionBudget:
-  enabled: false
-  minAvailable: 1
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
