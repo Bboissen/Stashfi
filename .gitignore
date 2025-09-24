@@ -217,7 +217,6 @@ infra/helm/**/charts/
 .cursor/
 .claude/
 claude.md
-*guide.md
 
 # database
 *.sql
