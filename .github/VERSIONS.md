@@ -31,7 +31,7 @@
 | `actions/checkout` | v5 |
 | `actions/setup-go` | v6 |
 | `actions/cache` | v4 |
-| `actions/setup-node` | v4 |
+| `actions/setup-node` | v5 |
 | `actions/upload-artifact` | v4 |
 | `docker/setup-qemu-action` | v3 |
 | `docker/setup-buildx-action` | v3 |
@@ -39,8 +39,8 @@
 | `docker/login-action` | v3 |
 | `docker/metadata-action` | v5 |
 | `aquasecurity/trivy-action` | 0.33.1 |
-| `anchore/sbom-action` | v0.17.2 |
-| `anchore/scan-action` | v5 |
+| `anchore/sbom-action` | v2.3.9 |
+| `anchore/scan-action` | v7 |
 | `gitleaks/gitleaks-action` | v2 |
 | `securego/gosec` | v2.22.9 |
 | `github/codeql-action/upload-sarif` | v3 |
