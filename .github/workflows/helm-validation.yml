@@ -41,7 +41,7 @@ jobs:
     needs: validate-kong
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5
 
       - name: Install tools
         run: |
@@ -56,7 +56,8 @@ jobs:
           # Install yq for YAML processing if not available
           if ! command -v yq &> /dev/null; then
             echo "Installing yq..."
-            wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            YQ_VERSION=v4.47.1
+            wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
             chmod +x /usr/local/bin/yq
           else
             echo "yq already installed: $(yq --version)"

@@ -43,153 +43,73 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Full history for better analysis
-
-      - name: Check Gitleaks availability
-        if: inputs.run_gitleaks
-        run: |
-          echo "🔍 Checking Gitleaks installation..."
-          which gitleaks && gitleaks version || echo "⚠️ Gitleaks not found"
 
       - name: Run Gitleaks secret scan
         if: inputs.run_gitleaks
         id: gitleaks
         continue-on-error: true
-        run: |
-          echo "🔍 Scanning for secrets with Gitleaks..."
-          if gitleaks detect \
-            --source ${{ inputs.scan_path }} \
-            --report-format sarif \
-            --report-path gitleaks.sarif \
-            --verbose; then
-            echo "✅ Gitleaks scan completed successfully"
-            echo "scan_status=success" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Gitleaks found issues or failed"
-            echo "scan_status=failed" >> $GITHUB_OUTPUT
-            # Still create an empty SARIF file for consistency
-            echo '{ "version": "2.1.0", "runs": [] }' > gitleaks.sarif
-          fi
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --source ${{ inputs.scan_path }} --report-format sarif --report-path gitleaks.sarif --no-banner
 
       - name: Upload Gitleaks results
         if: ${{ inputs.run_gitleaks && !env.ACT && always() }}
-        uses: github/codeql-action/upload-sarif@v3.30.0
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
-
-      - name: Check Gosec availability
-        if: inputs.run_gosec && inputs.language == 'go'
-        run: |
-          echo "🔍 Checking Gosec installation..."
-          which gosec && gosec -version || echo "⚠️ Gosec not found"
 
       - name: Run Gosec Security Scanner
         if: inputs.run_gosec && inputs.language == 'go'
         id: gosec
         continue-on-error: true
-        run: |
-          echo "🔍 Running Gosec security scanner..."
-          if gosec -fmt sarif -out gosec.sarif -severity medium ${{ inputs.scan_path }}/...; then
-            echo "✅ Gosec scan completed successfully"
-            echo "scan_status=success" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Gosec found issues or failed"
-            echo "scan_status=failed" >> $GITHUB_OUTPUT
-            # Create empty SARIF if not exists
-            [ -f gosec.sarif ] || echo '{ "version": "2.1.0", "runs": [] }' > gosec.sarif
-          fi
+        uses: securego/gosec@v2.22.9
+        with:
+          args: -fmt sarif -out gosec.sarif -severity medium ${{ inputs.scan_path }}/...
 
       - name: Upload Gosec results
         if: ${{ inputs.run_gosec && inputs.language == 'go' && !env.ACT && always() }}
-        uses: github/codeql-action/upload-sarif@v3.30.0
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif
           category: gosec
-
-      - name: Check Semgrep availability
-        if: inputs.run_semgrep
-        run: |
-          echo "🔍 Checking Semgrep installation..."
-          which semgrep && semgrep --version || echo "⚠️ Semgrep not found"
 
       - name: Run Semgrep
         if: inputs.run_semgrep
         id: semgrep
         continue-on-error: true
-        run: |
-          echo "🔍 Running Semgrep security analysis..."
-          # Language-specific rules
-          LANG_CONFIG=""
-          case "${{ inputs.language }}" in
-            go)
-              LANG_CONFIG="--config=auto --config=p/golang"
-              ;;
-            javascript|typescript)
-              LANG_CONFIG="--config=auto --config=p/javascript --config=p/typescript"
-              ;;
-            python)
-              LANG_CONFIG="--config=auto --config=p/python"
-              ;;
-            *)
-              LANG_CONFIG="--config=auto"
-              ;;
-          esac
-
-          if semgrep \
-            --config=p/security-audit \
-            --config=p/owasp-top-ten \
-            $LANG_CONFIG \
-            --sarif \
-            --output=semgrep.sarif \
-            ${{ inputs.scan_path }}; then
-            echo "✅ Semgrep scan completed successfully"
-            echo "scan_status=success" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Semgrep found issues or failed"
-            echo "scan_status=failed" >> $GITHUB_OUTPUT
-            # Create empty SARIF if not exists
-            [ -f semgrep.sarif ] || echo '{ "version": "2.1.0", "runs": [] }' > semgrep.sarif
-          fi
+        uses: docker://semgrep/semgrep:1.137.0
+        with:
+          args: >-
+            scan --config auto --sarif --output semgrep.sarif
+            ${{ inputs.scan_path }}
 
       - name: Upload Semgrep results
         if: ${{ inputs.run_semgrep && !env.ACT && always() }}
-        uses: github/codeql-action/upload-sarif@v3.30.0
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
           category: semgrep
-
-      - name: Check Trivy availability
-        if: inputs.run_trivy
-        run: |
-          echo "🔍 Checking Trivy installation..."
-          which trivy && trivy version || echo "⚠️ Trivy not found"
 
       - name: Run Trivy filesystem scan
         if: inputs.run_trivy
         id: trivy
         continue-on-error: true
-        run: |
-          echo "🔍 Running Trivy vulnerability scan..."
-          if trivy fs ${{ inputs.scan_path }} \
-            --format sarif \
-            --output trivy-fs.sarif \
-            --severity CRITICAL,HIGH,MEDIUM \
-            --scanners vuln,misconfig,secret; then
-            echo "✅ Trivy scan completed successfully"
-            echo "scan_status=success" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Trivy found issues or failed"
-            echo "scan_status=failed" >> $GITHUB_OUTPUT
-            # Create empty SARIF if not exists
-            [ -f trivy-fs.sarif ] || echo '{ "version": "2.1.0", "runs": [] }' > trivy-fs.sarif
-          fi
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.scan_path }}
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: vuln,misconfig,secret
 
       - name: Upload Trivy results
         if: ${{ inputs.run_trivy && !env.ACT && always() }}
-        uses: github/codeql-action/upload-sarif@v3.30.0
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-filesystem
@@ -197,7 +117,7 @@ jobs:
       - name: Initialize CodeQL
         # CodeQL requires GitHub API access, skip in act
         if: ${{ inputs.run_codeql && !env.ACT }}
-        uses: github/codeql-action/init@v3.30.0
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ inputs.language }}
           queries: security-and-quality
@@ -205,12 +125,12 @@ jobs:
       - name: Autobuild
         # CodeQL requires GitHub API access, skip in act
         if: ${{ inputs.run_codeql && !env.ACT }}
-        uses: github/codeql-action/autobuild@v3.30.0
+        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
         # CodeQL requires GitHub API access, skip in act
         if: ${{ inputs.run_codeql && !env.ACT }}
-        uses: github/codeql-action/analyze@v3.30.0
+        uses: github/codeql-action/analyze@v3
         with:
           category: codeql-${{ inputs.language }}
 

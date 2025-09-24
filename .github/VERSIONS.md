@@ -28,20 +28,24 @@
 ## GitHub Actions (Pinned Versions)
 | Action | Version |
 | --- | --- |
-| `actions/checkout` | v5.0.0 |
-| `actions/setup-go` | v6.0.0 |
-| `actions/cache` | v4 (various jobs) |
+| `actions/checkout` | v5 |
+| `actions/setup-go` | v6 |
+| `actions/cache` | v4 |
 | `actions/setup-node` | v4 |
-| `docker/setup-qemu-action` | v3.6.0 |
-| `docker/setup-buildx-action` | v3.11.1 |
-| `docker/build-push-action` | v6.18.0 |
-| `docker/login-action` | v3.5.0 |
-| `docker/metadata-action` | v5.6.1 or v5.8.0 (per workflow) |
+| `actions/upload-artifact` | v4 |
+| `docker/setup-qemu-action` | v3 |
+| `docker/setup-buildx-action` | v3 |
+| `docker/build-push-action` | v6 |
+| `docker/login-action` | v3 |
+| `docker/metadata-action` | v5 |
 | `aquasecurity/trivy-action` | 0.33.1 |
 | `anchore/sbom-action` | v0.17.2 |
-| `anchore/scan-action` | v5.2.0 |
-| `gitleaks/gitleaks-action` | v2.3.8 |
+| `anchore/scan-action` | v5 |
+| `gitleaks/gitleaks-action` | v2 |
+| `securego/gosec` | v2.22.9 |
 | `github/codeql-action/upload-sarif` | v3 |
+| `golangci/golangci-lint-action` | v6 |
+| `semgrep/semgrep` (container) | 1.137.0 |
 
 ## Security & QA Tooling
 | Tool | Version | Notes |
