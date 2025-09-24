@@ -108,6 +108,7 @@ jobs:
           output: trivy-fs.sarif
           severity: CRITICAL,HIGH,MEDIUM
           scanners: vuln,misconfig,secret
+          # Trivy CLI version is pinned via the action input; omit custom config for now
 
       - name: Upload Trivy results
         if: ${{ inputs.run_trivy && !env.ACT && hashFiles('trivy-fs.sarif') != '' }}

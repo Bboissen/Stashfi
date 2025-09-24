@@ -38,6 +38,7 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,misconfig,secret'
+          # Using action defaults; no custom config file is referenced
           skip-dirs: |
             infra/containers/ci-toolbox
 

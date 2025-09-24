@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: api-gateway
-        image: ghcr.io/stashfi/api-gateway:latest
+        image: ghcr.io/stashfi/api-gateway:sha-4c039ac
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -44,11 +44,15 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - ALL
+          readOnlyRootFilesystem: true
           seccompProfile:
             type: RuntimeDefault
         livenessProbe:
@@ -69,5 +73,11 @@ spec:
           failureThreshold: 2
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: tmp
+        emptyDir: {}

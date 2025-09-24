@@ -17,11 +17,12 @@ FROM alpine:3.22
 
 # Pin ca-certificates version and create non-root user in a single layer
 RUN apk --no-cache add ca-certificates=20250619-r0 \
-    && adduser -D -u 1000 appuser
+    && addgroup -g 10001 appgroup \
+    && adduser -D -u 10001 -G appgroup appuser
 
 WORKDIR /app
 
-COPY --chown=appuser:appuser --from=builder /app/api-gateway .
+COPY --chown=appuser:appgroup --from=builder /app/api-gateway .
 
 USER appuser
 

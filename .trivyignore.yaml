@@ -1,6 +1,0 @@
-misconfigurations:
-  - id: DS002
-    paths:
-      - infra/containers/ci-toolbox/Dockerfile
-    reason: "CI toolbox image intentionally runs as root to support act/Docker workflows"
-    expiration: "2026-01-01T00:00:00Z"
