@@ -15,10 +15,23 @@ spec:
       labels:
         app: public-api-docs
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: scalar
           image: ghcr.io/scalar/scalar:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           env:
             - name: SCALAR_SPEC_URL
               value: "http://api-gateway-service.stashfi.svc.cluster.local:8080/openapi/public.yaml"
@@ -26,3 +39,9 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
