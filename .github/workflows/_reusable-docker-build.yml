@@ -154,3 +154,32 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
           category: trivy-container
+
+      - name: Tag image for local scan
+        if: inputs.scan_image && !inputs.push
+        id: localtag
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIRST_TAG="$(echo "${{ steps.meta.outputs.tags }}" | head -n1)"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          LOCAL_TAG="${{ inputs.image_name }}:sha-${SHORT_SHA}"
+          echo "Tagging $FIRST_TAG as $LOCAL_TAG for local scanning"
+          docker tag "$FIRST_TAG" "$LOCAL_TAG"
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Run Trivy vulnerability scan (local)
+        if: inputs.scan_image && !inputs.push
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ steps.localtag.outputs.local_tag }}
+          format: 'sarif'
+          output: 'container-trivy.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results (local)
+        if: inputs.scan_image && !inputs.push
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: container-trivy.sarif
+          category: trivy-container
