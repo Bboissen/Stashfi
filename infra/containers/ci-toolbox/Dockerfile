@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # CI toolbox image for running GitHub Actions locally via act
 # Base: Ubuntu 24.04 (noble)
 FROM ubuntu:24.04
@@ -13,7 +14,9 @@ ENV GO_VERSION=1.25.1
 ENV PNPM_VERSION=9.9.0
 
 # Core packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     wget \
@@ -30,7 +33,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI (not the daemon, since we'll use host's Docker)
-RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
     $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
@@ -76,7 +81,9 @@ RUN set -eux; \
   go version | grep -q "go${GO_VERSION}"
 
 # Install additional CLI tools and dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
     make \
     gcc \
     libc6-dev \
@@ -185,7 +192,10 @@ RUN go install github.com/securego/gosec/v2/cmd/gosec@v2.22.8 && \
 
 # Install pipx via apt and Semgrep for security analysis (latest version)
 ENV PATH="/root/.local/bin:${PATH}"
-RUN apt-get update && apt-get install -y --no-install-recommends pipx && \
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    --mount=type=cache,target=/root/.cache/pip \
+    apt-get update && apt-get install -y --no-install-recommends pipx && \
     rm -rf /var/lib/apt/lists/* && \
     pipx install "semgrep==1.86.0" && \
     pipx ensurepath && \
