@@ -97,7 +97,9 @@ jobs:
   container-scan:
     name: Container Security Scan
     runs-on: ubuntu-24.04
-    if: github.ref == 'refs/heads/main'
+    # Run only on scheduled compliance runs to avoid duplicating
+    # container image scans already performed during the build workflow
+    if: github.event_name == 'schedule'
     needs: [sbom-scan]
     steps:
       - name: Checkout code
@@ -157,6 +159,6 @@ jobs:
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: detect --source <path> --report-format sarif --report-path gitleaks.sarif --no-banner
+          args: detect --source . --report-format sarif --report-path gitleaks.sarif --no-banner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
