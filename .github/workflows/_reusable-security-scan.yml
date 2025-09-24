@@ -52,11 +52,13 @@ jobs:
         id: gitleaks
         continue-on-error: true
         uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: detect --source ${{ inputs.scan_path }} --report-format sarif --report-path gitleaks.sarif --no-banner
 
       - name: Upload Gitleaks results
-        if: ${{ inputs.run_gitleaks && !env.ACT && always() }}
+        if: ${{ inputs.run_gitleaks && !env.ACT && hashFiles('gitleaks.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
