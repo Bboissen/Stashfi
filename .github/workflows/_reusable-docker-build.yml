@@ -47,6 +47,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      actions: write
       security-events: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
@@ -95,23 +96,42 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Configure cache destinations
+        id: cache
+        run: |
+          if [ "${{ inputs.push }}" = "true" ] && [ -z "$ACT" ]; then
+            echo "should_push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "cache_from<<EOF" >> "$GITHUB_OUTPUT"
+          echo "type=gha" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.push }}" = "true" ] && [ -z "$ACT" ]; then
+            echo "type=registry,ref=${{ inputs.registry }}/${{ steps.owner.outputs.owner }}/${{ inputs.image_name }}:buildcache" >> "$GITHUB_OUTPUT"
+          fi
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "cache_to<<EOF" >> "$GITHUB_OUTPUT"
+          echo "type=gha,mode=max" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.push }}" = "true" ] && [ -z "$ACT" ]; then
+            echo "type=registry,ref=${{ inputs.registry }}/${{ steps.owner.outputs.owner }}/${{ inputs.image_name }}:buildcache,mode=max" >> "$GITHUB_OUTPUT"
+          fi
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6.18.0
         with:
           context: ${{ inputs.dockerfile_path }}
           file: ${{ inputs.dockerfile_path }}/Dockerfile
-          platforms: ${{ (!inputs.push || env.ACT) && 'linux/amd64' || inputs.platforms }}
-          push: ${{ inputs.push && !env.ACT }}
+          platforms: ${{ (steps.cache.outputs.should_push == 'true') && inputs.platforms || 'linux/amd64' }}
+          push: ${{ steps.cache.outputs.should_push == 'true' }}
           load: ${{ !inputs.push || env.ACT }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=gha
-            type=registry,ref=${{ inputs.registry }}/${{ steps.owner.outputs.owner }}/${{ inputs.image_name }}:buildcache
-          cache-to: |
-            type=gha,mode=max
-            type=registry,ref=${{ inputs.registry }}/${{ steps.owner.outputs.owner }}/${{ inputs.image_name }}:buildcache,mode=max
+          cache-from: ${{ steps.cache.outputs.cache_from }}
+          cache-to: ${{ steps.cache.outputs.cache_to }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
           # Docker exporter (load: true) does not support attestations (sbom/provenance).

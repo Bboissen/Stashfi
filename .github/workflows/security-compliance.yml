@@ -18,6 +18,7 @@ permissions:
   contents: read
   security-events: write
   packages: read
+  actions: write
 
 jobs:
   # SBOM Generation and CVE Scanning
@@ -89,7 +90,7 @@ jobs:
       - name: Run go mod audit
         run: |
           cd services/api-gateway
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
   # Container scanning (when images are built)
@@ -139,7 +140,7 @@ jobs:
 
       - name: Check Go licenses
         run: |
-          go install github.com/google/go-licenses@latest
+          go install github.com/google/go-licenses@v1.6.0
           cd services/api-gateway
           go-licenses check ./... --disallowed_types=forbidden,restricted || true
 
