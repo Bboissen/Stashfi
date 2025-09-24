@@ -231,3 +231,5 @@ RUN set -eux; \
 
 # The container expects the host Docker socket to be mounted by act:
 #   --container-options "--privileged -v /var/run/docker.sock:/var/run/docker.sock"
+# CI utility image: disable container healthchecks explicitly
+HEALTHCHECK NONE
