@@ -51,7 +51,7 @@ jobs:
         if: inputs.run_gitleaks
         id: gitleaks
         continue-on-error: true
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -73,7 +73,7 @@ jobs:
           args: -fmt sarif -out gosec.sarif -severity medium ${{ inputs.scan_path }}/...
 
       - name: Upload Gosec results
-        if: ${{ inputs.run_gosec && inputs.language == 'go' && !env.ACT && always() }}
+        if: ${{ inputs.run_gosec && inputs.language == 'go' && !env.ACT && hashFiles('gosec.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif
@@ -90,7 +90,7 @@ jobs:
             ${{ inputs.scan_path }}
 
       - name: Upload Semgrep results
-        if: ${{ inputs.run_semgrep && !env.ACT && always() }}
+        if: ${{ inputs.run_semgrep && !env.ACT && hashFiles('semgrep.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
@@ -110,7 +110,7 @@ jobs:
           scanners: vuln,misconfig,secret
 
       - name: Upload Trivy results
-        if: ${{ inputs.run_trivy && !env.ACT && always() }}
+        if: ${{ inputs.run_trivy && !env.ACT && hashFiles('trivy-fs.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs.sarif

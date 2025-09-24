@@ -41,7 +41,7 @@
 | `aquasecurity/trivy-action` | 0.33.1 |
 | `anchore/sbom-action` | v2.3.9 |
 | `anchore/scan-action` | v7 |
-| `gitleaks/gitleaks-action` | v2 |
+| `gitleaks/gitleaks-action` | v2.3.9 |
 | `securego/gosec` | v2.22.9 |
 | `github/codeql-action/upload-sarif` | v3 |
 | `golangci/golangci-lint-action` | v6 |

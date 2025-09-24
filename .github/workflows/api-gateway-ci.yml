@@ -38,6 +38,7 @@ jobs:
   security:
     name: Security Scan
     uses: ./.github/workflows/_reusable-security-scan.yml
+    secrets: inherit
     with:
       language: go
       scan_path: ./services/api-gateway
