@@ -1,0 +1,3 @@
+# Suppress Trivy misconfiguration rule: Untrusted image registry
+# We host images in GHCR under ghcr.io/stashfi and treat it as trusted.
+AVD-KSV-0125

@@ -1,0 +1,96 @@
+# Gitleaks configuration for Stashfi
+# https://github.com/gitleaks/gitleaks
+
+[extend]
+# Disabled default rules due to Go regexp incompatibility with negative lookahead in v8.28.0
+# See: https://github.com/gitleaks/gitleaks/issues/444
+useDefault = false
+
+[allowlist]
+description = "Allowlist for Stashfi"
+
+# Allow example/template files
+paths = [
+  '''.env.example''',
+  '''.env.template''',
+  '''example''',
+  '''test''',
+  '''testdata''',
+  '''.*_test\.go''',
+  '''docs/.*\.md''',
+  '''services/api-gateway/README\.md''',
+  '''scripts/setup-secret-scanning\.sh''',  # Contains example secrets for testing
+  '''.github/workflows/.*\.yml''',  # CI/CD workflows with localhost URLs
+  '''.git/.*''',  # Exclude .git directory
+]
+
+# Allow specific test patterns
+regexes = [
+  '''EXAMPLE_.*''',
+  '''PLACEHOLDER_.*''',
+  '''your-.*-here''',
+  '''xxx+''',
+  '''<.*>''',
+  '''\$\{.*\}''',  # Template variables
+]
+
+# Custom rules for Stashfi-specific patterns
+[[rules]]
+description = "Kong Admin Token"
+id = "kong-admin-token"
+regex = '''(?i)(kong[_\-]?admin[_\-]?token|KONG_ADMIN_TOKEN)\s*[:=]\s*['"]?([a-zA-Z0-9]{32,})['"]?'''
+tags = ["kong", "token", "admin"]
+
+[[rules]]
+description = "Kong Service Key"
+id = "kong-service-key"
+regex = '''(?i)(kong[_\-]?service[_\-]?key|KONG_SERVICE_KEY)\s*[:=]\s*['"]?([a-zA-Z0-9]{32,})['"]?'''
+tags = ["kong", "key", "service"]
+
+[[rules]]
+description = "Database Connection String"
+id = "database-connection"
+regex = '''(?i)(postgres|postgresql|mysql|mongodb|redis)://[^:]+:[^@]+@[^/]+/\w+'''
+tags = ["database", "connection"]
+
+[[rules]]
+description = "Kubernetes Secret"
+id = "k8s-secret"
+regex = '''(?i)(kind:\s*Secret)|(data:[\s\S]*?[a-zA-Z0-9+/]{40,})'''
+tags = ["kubernetes", "secret"]
+
+[[rules]]
+description = "Private Key"
+id = "private-key"
+regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+description = "Hardcoded Password"
+id = "hardcoded-password"
+regex = '''(?i)(password|passwd|pwd)\s*[:=]\s*['"][^'"]{8,}['"]'''
+tags = ["password", "hardcoded"]
+
+[[rules]]
+description = "API Endpoint with Credentials"
+id = "api-credentials"
+regex = '''https?://[^:]+:[^@]+@[^/]+'''
+tags = ["api", "credentials", "url"]
+
+# Additional entropy checks for high-entropy strings
+[[rules]]
+description = "High Entropy String"
+id = "high-entropy"
+regex = '''(?:[A-Za-z0-9+/]{40,}|[a-f0-9]{40,})'''
+entropy = 4.5
+tags = ["entropy", "secret"]
+
+# Ignore certain files completely
+[allowlist.files]
+paths = [
+  '''go.sum''',
+  '''package-lock.json''',
+  '''yarn.lock''',
+  '''Gemfile.lock''',
+  '''poetry.lock''',
+]

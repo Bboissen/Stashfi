@@ -1,0 +1,3 @@
+# Test secrets - these are intentionally placed for testing purposes
+8812dcdd923a8d7423b62bcc1c035ecb4066d405:scripts/setup-secret-scanning.sh:generic-api-key:140
+68a26574e95970b22af4a2e97c6e3d41b7859ea0:services/api-gateway/README.md:api-credentials:111

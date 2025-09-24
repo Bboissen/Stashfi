@@ -1,0 +1,267 @@
+name: API Integration Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/api-gateway/**'
+      - 'infra/helm/kong/**'
+      - 'specs/**'
+      - '.spectral.yaml'
+      - '.github/workflows/api-integration-test.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'services/api-gateway/**'
+      - 'infra/helm/kong/**'
+      - 'specs/**'
+      - '.spectral.yaml'
+      - '.github/workflows/api-integration-test.yml'
+
+concurrency:
+  group: api-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  integration-test:
+    name: API Integration Tests
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kong
+          POSTGRES_PASSWORD: kong
+          POSTGRES_DB: kong
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.1'
+          cache: true
+          cache-dependency-path: services/api-gateway/go.sum
+
+      - name: Cache Kong installation
+        id: cache-kong
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/share/kong
+            /usr/local/kong
+            ~/.kong
+          key: kong-${{ runner.os }}-3.11.0.3
+          restore-keys: |
+            kong-${{ runner.os }}-
+
+      - name: Install Kong
+        run: |
+          # Install prerequisites for secure APT
+          sudo apt-get update
+          sudo apt-get install -y curl gnupg ca-certificates
+
+          # Add Kong GPG key and repository for Ubuntu Noble (24.04)
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://packages.konghq.com/public/gateway-311/gpg.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/kong-gateway-311-archive-keyring.gpg
+          sudo chmod 0644 /etc/apt/keyrings/kong-gateway-311-archive-keyring.gpg
+
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/kong-gateway-311-archive-keyring.gpg] https://packages.konghq.com/public/gateway-311/deb/ubuntu noble main" \
+            | sudo tee /etc/apt/sources.list.d/kong-gateway-311.list > /dev/null
+
+          sudo apt-get update
+          sudo apt-get install -y kong-enterprise-edition=3.11.0.3
+
+      - name: Configure Kong
+        run: |
+          # Create Kong configuration
+          cat > /tmp/kong.conf << EOF
+          prefix = /tmp/kong
+          router_flavor = traditional_compatible
+          database = postgres
+          pg_host = localhost
+          pg_port = 5432
+          pg_user = kong
+          pg_password = kong
+          pg_database = kong
+          admin_listen = 127.0.0.1:8001
+          proxy_listen = 127.0.0.1:8000
+          EOF
+
+          # Bootstrap Kong database
+          mkdir -p /tmp/kong
+          kong migrations bootstrap -c /tmp/kong.conf
+          kong migrations up -c /tmp/kong.conf
+          kong migrations finish -c /tmp/kong.conf
+
+      - name: Start Kong
+        run: |
+          kong start -c /tmp/kong.conf
+          sleep 5
+          curl -i http://localhost:8001/
+
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('services/api-gateway/**/*.go', 'services/api-gateway/go.mod') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-
+
+      - name: Build API Gateway
+        run: |
+          cd services/api-gateway
+          go build -o api-gateway .
+
+      - name: Start API Gateway
+        run: |
+          cd services/api-gateway
+          ./api-gateway &
+          sleep 3
+          # Check health endpoint
+          curl -f http://localhost:8080/health || exit 1
+
+      - name: Configure Kong Routes
+        run: |
+          set -e
+          # Create service pointing directly to the API Gateway
+          echo "Creating Kong service..."
+          curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8001/services \
+            --data "name=api-gateway-service" \
+            --data "url=http://127.0.0.1:8080"
+
+          echo "Creating Kong route..."
+          # Use /routes endpoint to avoid any name/path nuances
+          curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8001/routes \
+            --data "service.name=api-gateway-service" \
+            --data "paths[]=/api" \
+            --data "strip_path=true" \
+            --data "path_handling=v1" \
+            --data "protocols[]=http"
+
+          echo "Current Kong routes:"
+          curl -sS http://127.0.0.1:8001/routes | sed -e 's/{/\n{/g' | head -n 50 || true
+
+          echo "Waiting for Kong router to apply routes..."
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:8000/api/health > /dev/null; then
+              echo "Kong proxy route is live."; break
+            fi
+            echo "Retry $i/30: route not yet active"; sleep 1
+          done
+
+      - name: Test API Endpoints
+        run: |
+          echo "Testing direct API Gateway endpoints..."
+          curl -v http://localhost:8080/health
+          curl -v http://localhost:8080/ready
+
+          echo -e "\nTesting Kong proxy endpoints..."
+          # Test health through Kong
+          curl -f -v http://127.0.0.1:8000/api/health || exit 1
+
+          # Test readiness through Kong
+          curl -f -v http://127.0.0.1:8000/api/ready || exit 1
+
+          echo -e "\nAll tests passed!"
+
+      - name: Run API Tests
+        run: |
+          cd services/api-gateway
+          go test -v ./... -tags=integration
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Cache npm global packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-global-${{ runner.os }}-spectral-6
+          restore-keys: |
+            npm-global-${{ runner.os }}-
+
+      - name: OpenAPI Spec Validation
+        run: |
+          # Check if spectral is already installed
+          if ! command -v spectral &> /dev/null; then
+            echo "Installing spectral for OpenAPI linting..."
+            npm install -g @stoplight/spectral-cli@^6
+          fi
+          spectral --version
+
+          # Validate OpenAPI spec
+          if [ -f specs/api-gateway.yaml ]; then
+            spectral lint -r .spectral.yaml specs/api-gateway.yaml
+          fi
+
+      - name: Cache k6 installation
+        id: cache-k6
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/k6
+          key: k6-${{ runner.os }}-latest
+          restore-keys: |
+            k6-${{ runner.os }}-
+
+      - name: Load Testing
+        run: |
+          # Install k6 if not cached
+          if [ "${{ steps.cache-k6.outputs.cache-hit }}" != "true" ] && ! command -v k6 &> /dev/null; then
+            echo "Installing k6..."
+            sudo gpg -k
+            sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+            echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+            sudo apt-get update
+            sudo apt-get install -y k6
+            # Copy k6 to cached location
+            sudo cp $(which k6) /usr/local/bin/k6 || true
+          else
+            echo "k6 already available"
+          fi
+
+          # Create basic load test
+          cat > loadtest.js << 'EOF'
+          import http from 'k6/http';
+          import { check } from 'k6';
+
+          export let options = {
+            stages: [
+              { duration: '10s', target: 10 },
+              { duration: '20s', target: 10 },
+              { duration: '10s', target: 0 },
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<500'],
+              http_req_failed: ['rate<0.1'],
+            },
+          };
+
+          export default function() {
+            let response = http.get('http://localhost:8000/api/health');
+            check(response, {
+              'status is 200': (r) => r.status === 200,
+            });
+          }
+          EOF
+
+          # Run load test
+          k6 run loadtest.js

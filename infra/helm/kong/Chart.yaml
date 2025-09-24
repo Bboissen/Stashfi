@@ -1,0 +1,11 @@
+apiVersion: v2
+name: stashfi-kong
+description: Kong API Gateway configuration for Stashfi
+type: application
+version: 0.1.0
+appVersion: "3.9.1"
+
+dependencies:
+  - name: kong
+    version: 2.51.0
+    repository: https://charts.konghq.com

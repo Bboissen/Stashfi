@@ -1,0 +1,60 @@
+# Spectral configuration for Stashfi API
+# Early stage configuration - focused on essential standards
+
+extends:
+  - spectral:oas
+
+formats:
+  - oas3
+
+# Ruleset optimized for early-stage development
+# Can be made stricter as the project matures
+rules:
+  # Disable overly strict built-in rules for now
+  info-contact: off
+  info-license: off
+  tag-description: off
+  oas3-unused-component: off
+
+  # Keep these as warnings instead of errors
+  operation-description: warn
+  operation-tags: warn
+  oas3-api-servers: warn
+  operation-operationId: error  # Keep as error - needed for code generation
+
+  # Custom rules for basic standards
+  prefer-https-servers:
+    description: Server URLs should use HTTPS in production
+    given: $.servers[*].url
+    severity: warn
+    then:
+      function: pattern
+      functionOptions:
+        match: '^(https://|/|http://localhost)' # Allow HTTPS, relative paths, or localhost
+
+  response-success-defined:
+    description: Operations should define at least one success response
+    given: $.paths[*][?(@property.match(/^(get|put|post|delete|patch)$/))]
+    severity: error
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          properties:
+            responses:
+              patternProperties:
+                "^2": {}
+              minProperties: 1
+          required: [responses]
+
+  response-error-defined:
+    description: Operations should define error responses
+    given: $.paths[*][?(@property.match(/^(get|put|post|delete|patch)$/))].responses
+    severity: warn
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          patternProperties:
+            "^(4|5)": {}
+          minProperties: 1

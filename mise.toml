@@ -1,0 +1,60 @@
+# Root-level mise configuration for the Stashfi monorepo
+
+[settings]
+lockfile = true
+
+[tools]
+# Core development runtimes
+node = "24.7.0"
+go   = "1.25.1"
+uv   = "0.8.15"
+
+# Kubernetes and Helm tooling
+helm       = "3.18.6"
+kubectl    = "1.34.1"
+minikube   = "1.36.0"
+kind       = "0.30.0"           # Match .github/VERSIONS.md
+kubeconform = "0.7.0"           # Modern replacement for deprecated kubeval, with ARM support
+pluto      = "5.22.5"
+opa       = "1.8.0"
+# "go:github.com/FairwindsOps/polaris" = "latest"  # unsupported by mise registry
+
+# Linters and formatters
+#hadolint = "2.13.1"      # Dockerfile linter - No Darwin arm_64 version available
+shellcheck = "0.11.0"   # Shell script analyzer
+shfmt = "3.12.0"        # Shell script formatter
+yq = "4.47.1"           # YAML/JSON processor
+jq = "1.8.1"
+"pipx:yamllint" = "1.37.1"
+"npm:@commitlint/cli" = "19.8.1"
+"npm:@stoplight/spectral-cli" = "6.15.0"  # OpenAPI linter
+
+# Git hooks and commit management
+"pipx:pre-commit" = "4.3.0"
+"pipx:commitizen" = "4.8.4"
+
+# Go tooling
+# Corrected gitleaks path to use the canonical Go module import path
+"go:github.com/zricethezav/gitleaks/v8" = "8.28.0"
+"go:github.com/golangci/golangci-lint/v2/cmd/golangci-lint" = "2.4.0"
+"go:golang.org/x/tools/cmd/goimports" = "0.36.0"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.1.4"
+"go:github.com/nektos/act" = "0.2.81"   # Run GitHub Actions locally via act (managed by mise)
+
+# Security scanners
+"pipx:detect-secrets" = "1.5.0"
+"go:github.com/securego/gosec/v2/cmd/gosec" = "2.22.8"
+"go:github.com/google/osv-scanner/cmd/osv-scanner" = "1.9.2"
+dive = "0.13.1"
+syft = "1.32.0"
+grype = "0.99.1"
+cosign = "2.5.3"
+trivy = "0.66.0"
+dockle = "0.4.15"
+"npm:snyk" = "1.1299.0"
+"pipx:trufflehog" = "2.2.1"
+"go:github.com/sonatype-nexus-community/nancy" = "1.0.51"
+"go:github.com/slsa-framework/slsa-verifier/cli/slsa-verifier" = "1.4.1"
+
+
+# NOTE: "@commitlint/cli" is now managed in the root package.json

@@ -1,0 +1,218 @@
+openapi: 3.1.0
+info:
+  title: Stashfi API Gateway
+  description: API Gateway service for the Stashfi trading platform
+  version: 0.1.0
+  contact:
+    name: Stashfi Team
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://localhost:32080
+    description: Minikube Kong proxy
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns the health status of the API gateway service
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ready:
+    get:
+      summary: Readiness check endpoint
+      description: Returns whether the service is ready to accept requests
+      operationId: getReady
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+
+  /api/v1/status:
+    get:
+      summary: Service status endpoint
+      description: Returns detailed status information about the API gateway service
+      operationId: getStatus
+      tags:
+        - Status
+      responses:
+        '200':
+          description: Service status information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/v1/orders:
+    get:
+      summary: Proxy - list or query orders
+      description: Proxies request to the Order service. Request/response schema is owned by the Order service.
+      operationId: listOrdersProxy
+      tags: [Orders]
+      responses:
+        '200':
+          description: Successful response from Order service
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad request
+        '500':
+          description: Upstream error
+    post:
+      summary: Proxy - create order
+      description: Proxies request to the Order service. Request/response schema is owned by the Order service.
+      operationId: createOrderProxy
+      tags: [Orders]
+      responses:
+        '201':
+          description: Created by Order service
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid payload
+        '401':
+          description: Unauthorized
+        '500':
+          description: Upstream error
+    delete:
+      summary: Proxy - bulk delete/cancel (if supported)
+      description: Proxies request to the Order service.
+      operationId: deleteOrdersProxy
+      tags: [Orders]
+      responses:
+        '204':
+          description: No content
+        '401':
+          description: Unauthorized
+        '500':
+          description: Upstream error
+
+  /api/v1/orders/{id}:
+    get:
+      summary: Proxy - get order by ID
+      description: Proxies request to the Order service.
+      operationId: getOrderProxy
+      tags: [Orders]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order found
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Not found
+        '401':
+          description: Unauthorized
+        '500':
+          description: Upstream error
+    delete:
+      summary: Proxy - cancel order by ID
+      description: Proxies request to the Order service.
+      operationId: deleteOrderProxy
+      tags: [Orders]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No content
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not found
+        '500':
+          description: Upstream error
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy]
+          description: Health status of the service
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp of the health check
+
+    ReadyResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ready]
+          description: Readiness status of the service
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp of the readiness check
+
+    StatusResponse:
+      type: object
+      required:
+        - service
+        - version
+        - status
+        - timestamp
+      properties:
+        service:
+          type: string
+          description: Name of the service
+          example: api-gateway
+        version:
+          type: string
+          description: Version of the service
+          example: 0.1.0
+        status:
+          type: string
+          enum: [operational, degraded, down]
+          description: Operational status of the service
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp of the status check
+
+tags:
+  - name: Health
+    description: Health and readiness checks
+  - name: Status
+    description: Service status information
+  - name: Orders
+    description: Proxied order endpoints; schemas are defined by the Order service

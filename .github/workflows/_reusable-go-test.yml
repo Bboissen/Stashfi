@@ -1,0 +1,155 @@
+name: Reusable Go Test
+
+on:
+  workflow_call:
+    inputs:
+      service_path:
+        description: 'Path to Go service'
+        type: string
+        default: '.'
+      go_version:
+        description: 'Go version'
+        type: string
+        default: '1.25.1'
+      run_integration:
+        description: 'Run integration tests'
+        type: boolean
+        default: false
+      coverage_threshold:
+        description: 'Minimum coverage percentage'
+        type: number
+        default: 50
+
+concurrency:
+  group: go-test-${{ github.workflow }}-${{ github.ref }}-${{ inputs.service_path }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go Test & Lint
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: Cache Go modules and build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/go/bin
+          key: go-${{ runner.os }}-${{ inputs.go_version }}-${{ hashFiles(format('{0}/go.sum', inputs.service_path)) }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ inputs.go_version }}-
+            go-${{ runner.os }}-
+
+      - name: Cache golangci-lint
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-v2.4.0
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-
+
+      - name: Cache test results
+        id: test-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ inputs.service_path }}/.test-cache
+            ${{ inputs.service_path }}/coverage.out
+          key: test-results-${{ runner.os }}-${{ hashFiles(format('{0}/**/*.go', inputs.service_path), format('{0}/go.mod', inputs.service_path)) }}
+          restore-keys: |
+            test-results-${{ runner.os }}-
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.4.0
+          working-directory: ${{ inputs.service_path }}
+          args: --timeout=5m
+          skip-cache: false
+
+      - name: Check Go formatting
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "❌ Go code is not formatted. Run 'gofmt -w .' to fix."
+            gofmt -d .
+            exit 1
+          fi
+          echo "✅ Go code is properly formatted"
+
+      - name: Run go vet
+        working-directory: ${{ inputs.service_path }}
+        run: go vet ./...
+
+      - name: Download Go dependencies
+        if: steps.test-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ inputs.service_path }}
+        run: go mod download
+
+      - name: Check go.mod tidiness
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          cp go.mod go.mod.orig
+          cp go.sum go.sum.orig || touch go.sum.orig
+          go mod tidy
+          if ! diff -q go.mod go.mod.orig > /dev/null || ! diff -q go.sum go.sum.orig > /dev/null; then
+            echo "❌ go.mod or go.sum is not tidy"
+            diff go.mod go.mod.orig || true
+            diff go.sum go.sum.orig || true
+            exit 1
+          fi
+          rm go.mod.orig go.sum.orig
+          echo "✅ go.mod is tidy"
+
+      - name: Run unit tests with coverage
+        if: steps.test-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          mkdir -p .test-cache
+          go test -v -race -coverprofile=coverage.out -covermode=atomic -json ./... > .test-cache/test-results.json
+          go tool cover -func=coverage.out
+          echo "$(date -u +%Y%m%d%H%M%S)" > .test-cache/timestamp
+
+      - name: Display cached test results
+        if: steps.test-cache.outputs.cache-hit == 'true'
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          echo "✅ Using cached test results from $(cat .test-cache/timestamp 2>/dev/null || echo 'unknown')"
+          go tool cover -func=coverage.out
+
+      - name: Check coverage threshold
+        working-directory: ${{ inputs.service_path }}
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage: ${COVERAGE}%"
+          THRESHOLD=${{ inputs.coverage_threshold }}
+          if [ $(echo "$COVERAGE < $THRESHOLD" | bc) -eq 1 ]; then
+            echo "Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "✅ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+
+      - name: Run integration tests
+        if: inputs.run_integration
+        working-directory: ${{ inputs.service_path }}
+        run: go test -v -race -tags=integration ./...
+
+      - name: Upload coverage
+        # Only run in GitHub Actions, not in act (local testing)
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.job }}
+          path: ${{ inputs.service_path }}/coverage.out

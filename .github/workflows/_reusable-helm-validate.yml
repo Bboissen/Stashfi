@@ -1,0 +1,232 @@
+name: Reusable Helm Validation
+
+on:
+  workflow_call:
+    inputs:
+      chart_path:
+        description: 'Path to Helm chart'
+        type: string
+        required: true
+      helm_version:
+        description: 'Helm version'
+        type: string
+        default: '3.18.6'
+      kubernetes_version:
+        description: 'Kubernetes version for validation'
+        type: string
+        default: '1.31.3'
+      run_kubeconform:
+        description: 'Run kubeconform validation'
+        type: boolean
+        default: true
+      run_pluto:
+        description: 'Check for deprecated APIs'
+        type: boolean
+        default: true
+
+concurrency:
+  group: helm-validate-${{ github.workflow }}-${{ github.ref }}-${{ inputs.chart_path }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Helm Chart
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Setup tools cache directory
+        run: |
+          mkdir -p ~/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache Helm
+        id: cache-helm
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/helm
+          key: helm-${{ runner.os }}-${{ inputs.helm_version }}
+          restore-keys: |
+            helm-${{ runner.os }}-
+
+      - name: Cache kubeconform
+        id: cache-kubeconform
+        if: inputs.run_kubeconform
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/kubeconform
+          key: kubeconform-${{ runner.os }}-v0.7.0
+          restore-keys: |
+            kubeconform-${{ runner.os }}-
+
+      - name: Cache pluto
+        id: cache-pluto
+        if: inputs.run_pluto
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/pluto
+          key: pluto-${{ runner.os }}-v5.22.5
+          restore-keys: |
+            pluto-${{ runner.os }}-
+
+      - name: Install tools
+        run: |
+          # Install Helm if not cached
+          if [ "${{ steps.cache-helm.outputs.cache-hit }}" != "true" ] && ! command -v helm &> /dev/null; then
+            echo "Installing Helm..."
+            curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            chmod 700 get_helm.sh
+            HELM_INSTALL_DIR=~/.local/bin ./get_helm.sh --no-sudo --version v${{ inputs.helm_version }}
+            rm get_helm.sh
+          else
+            echo "Helm already available: $(helm version --short 2>/dev/null || echo 'checking...')"
+          fi
+
+          # Install kubeconform if not cached
+          if [ "${{ steps.cache-kubeconform.outputs.cache-hit }}" != "true" ] && [ "${{ inputs.run_kubeconform }}" = "true" ] && ! command -v kubeconform &> /dev/null; then
+            echo "Installing kubeconform..."
+            curl -L https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz
+            mv kubeconform ~/.local/bin/
+            chmod +x ~/.local/bin/kubeconform
+          else
+            echo "Kubeconform already available: $(kubeconform -v 2>/dev/null || echo 'checking...')"
+          fi
+
+          # Install pluto if not cached
+          if [ "${{ steps.cache-pluto.outputs.cache-hit }}" != "true" ] && [ "${{ inputs.run_pluto }}" = "true" ] && ! command -v pluto &> /dev/null; then
+            echo "Installing pluto..."
+            curl -L https://github.com/FairwindsOps/pluto/releases/download/v5.22.5/pluto_5.22.5_linux_amd64.tar.gz | tar xz
+            mv pluto ~/.local/bin/
+            chmod +x ~/.local/bin/pluto
+          else
+            echo "Pluto already available: $(pluto version 2>/dev/null || echo 'checking...')"
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Cache Helm repositories
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/helm
+            ~/.config/helm
+          key: helm-repos-${{ runner.os }}-${{ hashFiles('**/Chart.yaml', '**/Chart.lock') }}
+          restore-keys: |
+            helm-repos-${{ runner.os }}-
+
+      - name: Add Helm repositories
+        run: |
+          # Add common Helm repos
+          helm repo add kong https://charts.konghq.com || true
+          helm repo add bitnami https://charts.bitnami.com/bitnami || true
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+          helm repo add grafana https://grafana.github.io/helm-charts || true
+          helm repo update
+
+      - name: Cache Helm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.chart_path }}/charts
+          key: helm-deps-${{ runner.os }}-${{ hashFiles(format('{0}/Chart.lock', inputs.chart_path)) }}
+          restore-keys: |
+            helm-deps-${{ runner.os }}-
+
+      - name: Update dependencies
+        working-directory: ${{ inputs.chart_path }}
+        run: |
+          if [ -f Chart.yaml ]; then
+            helm dependency update
+            helm dependency build
+          fi
+
+      - name: Lint Helm chart
+        working-directory: ${{ inputs.chart_path }}
+        run: |
+          helm lint . \
+            --strict \
+            --with-subcharts
+
+      - name: Template with default values
+        working-directory: ${{ inputs.chart_path }}
+        run: |
+          helm template test-release . \
+            --debug \
+            --kube-version v${{ inputs.kubernetes_version }} \
+            --namespace stashfi \
+            > rendered-default.yaml
+          echo "✅ Chart templated successfully with default values"
+
+      - name: Template with production values
+        working-directory: ${{ inputs.chart_path }}
+        run: |
+          if [ -f values-production.yaml ]; then
+            helm template test-release . \
+              --values values-production.yaml \
+              --kube-version v${{ inputs.kubernetes_version }} \
+              --namespace stashfi-prod \
+              > rendered-production.yaml
+            echo "✅ Chart templated successfully with production values"
+          fi
+
+      - name: Run kubeconform validation
+        if: inputs.run_kubeconform
+        working-directory: ${{ inputs.chart_path }}
+        run: |
+          echo "Running kubeconform on rendered manifests..."
+          if [ -f rendered-default.yaml ]; then
+            kubeconform \
+              -kubernetes-version ${{ inputs.kubernetes_version }} \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              -summary \
+              -verbose \
+              rendered-default.yaml
+          fi
+
+          if [ -f rendered-production.yaml ]; then
+            kubeconform \
+              -kubernetes-version ${{ inputs.kubernetes_version }} \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              -summary \
+              -verbose \
+              rendered-production.yaml
+          fi
+
+      - name: Check for deprecated APIs with Pluto
+        if: inputs.run_pluto
+        working-directory: ${{ inputs.chart_path }}
+        run: |
+          echo "Checking for deprecated Kubernetes APIs..."
+          if [ -f rendered-default.yaml ]; then
+            pluto detect rendered-default.yaml \
+              --target-versions k8s=v${{ inputs.kubernetes_version }} \
+              --output wide
+          fi
+
+          if [ -f rendered-production.yaml ]; then
+            pluto detect rendered-production.yaml \
+              --target-versions k8s=v${{ inputs.kubernetes_version }} \
+              --output wide
+          fi
+
+      - name: Upload rendered manifests
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-manifests-${{ github.job }}
+          path: |
+            ${{ inputs.chart_path }}/rendered-*.yaml
+
+      - name: Local validation summary
+        if: ${{ env.ACT }}
+        run: |
+          echo "📋 Helm Validation Summary (Local Run)"
+          echo "====================================="
+          echo ""
+          echo "Rendered manifests:"
+          ls -la ${{ inputs.chart_path }}/rendered-*.yaml 2>/dev/null || echo "No rendered manifests found"
+          echo ""
+          echo "✅ Validation completed locally (artifacts not uploaded)"

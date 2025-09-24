@@ -1,0 +1,101 @@
+kong:
+  image:
+    repository: kong
+    tag: "3.9.1"
+    pullPolicy: IfNotPresent
+
+  # Production-safe defaults
+  env:
+    database: "off"  # Keep DB-less for now; switch if you plan DB-backed
+    nginx_worker_processes: "2"
+    proxy_access_log: /dev/stdout
+    admin_access_log: /dev/stdout
+    proxy_error_log: /dev/stderr
+    admin_error_log: /dev/stderr
+    prefix: /kong_prefix/
+    log_level: info
+
+  # Do not expose Admin API publicly in prod
+  admin:
+    enabled: false
+
+  # Expose proxy via cloud LB (or change to ClusterIP if using a separate Ingress)
+  proxy:
+    enabled: true
+    type: LoadBalancer
+    http:
+      enabled: true
+      servicePort: 80
+      containerPort: 8000
+    tls:
+      enabled: true
+      servicePort: 443
+      containerPort: 8443
+
+  status:
+    enabled: true
+    http:
+      enabled: true
+      containerPort: 8100
+
+  # Keep DB-less config initially; consider moving to a ConfigMap/Secret later
+  dblessConfig:
+    config: |
+      _format_version: "3.0"
+      _transform: true
+
+      services:
+      - name: health-check
+        url: http://api-gateway-service.stashfi.svc.cluster.local:8080
+        routes:
+        - name: health-route
+          paths:
+          - /health
+          strip_path: false
+        - name: readiness-route
+          paths:
+          - /ready
+          strip_path: false
+
+      - name: api-v1
+        url: http://api-gateway-service.stashfi.svc.cluster.local:8080
+        routes:
+        - name: api-v1-route
+          paths:
+          - /api/v1
+          strip_path: false
+
+  enterprise:
+    enabled: false
+  manager:
+    enabled: false
+  portal:
+    enabled: false
+
+  # Controller disabled by default; enable if you want KIC-managed Ingress/CRDs
+  ingressController:
+    enabled: false
+
+  postgresql:
+    enabled: false
+
+  # Adjust resources/replicas for production
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+  replicaCount: 2
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1

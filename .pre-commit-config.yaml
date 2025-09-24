@@ -1,0 +1,163 @@
+# Pre-commit hooks for Stashfi
+# Tools are managed by mise and hooks use `language: system`
+
+repos:
+  # GitHub Actions workflow validation
+  - repo: local
+    hooks:
+      - id: validate-workflows
+        name: Validate GitHub Actions workflows
+        entry: bash scripts/validate-workflows.sh
+        language: system
+        files: '^\.github/workflows/.*\.ya?ml$'
+        pass_filenames: false
+
+  # Gitleaks - Use the version installed by mise
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: Detect secrets with Gitleaks
+        entry: gitleaks detect --verbose --source . --config .gitleaks.toml
+        language: system
+        pass_filenames: false
+        types: [text]
+
+  # Gosec - Go security analyzer
+  - repo: local
+    hooks:
+      - id: gosec
+        name: Go security check with gosec
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/services/api-gateway" && gosec -fmt text -quiet -severity medium ./...'
+        language: system
+        files: '^services/api-gateway/.*\.go$'
+        pass_filenames: false
+
+  # Go formatting and linting - Use the version installed by mise
+  - repo: local
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/services/api-gateway" && golangci-lint run --fix'
+        language: system
+        files: '^services/api-gateway/.*\.go$'
+        pass_filenames: false
+
+  # Go mod tidy
+  - repo: local
+    hooks:
+      - id: go-mod-tidy
+        name: Go mod tidy
+        entry: bash -c 'cd services/api-gateway && go mod tidy'
+        language: system
+        files: 'services/api-gateway/.*\.go$'
+        pass_filenames: false
+
+  # Go formatting check - fail if any files need formatting
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: Go format check
+        entry: bash -c 'cd services/api-gateway && test -z "$(gofmt -l .)"'
+        language: system
+        files: '^services/api-gateway/.*\.go$'
+        pass_filenames: false
+
+  # Go vet - static analysis
+  - repo: local
+    hooks:
+      - id: go-vet
+        name: Go vet
+        entry: bash -c 'cd services/api-gateway && go vet ./...'
+        language: system
+        files: '^services/api-gateway/.*\.go$'
+        pass_filenames: false
+
+  # Go tests with -short flag for speed
+  - repo: local
+    hooks:
+      - id: go-test-short
+        name: Go unit tests (short)
+        entry: bash -c 'cd services/api-gateway && go test -short -race ./...'
+        language: system
+        files: '^services/api-gateway/.*\.go$'
+        pass_filenames: false
+
+  # YAML/JSON formatting and basic checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Dockerfile linting - Use the version installed via homebrew
+  - repo: local
+    hooks:
+      - id: hadolint
+        name: Lint Dockerfiles
+        entry: hadolint
+        language: system
+        types: [dockerfile]
+        args: ['--ignore', 'DL3008', '--ignore', 'DL3009', '--ignore', 'DL3018', '--ignore', 'DL3059']
+
+  # Shell script linting
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: Lint shell scripts
+        entry: shellcheck
+        language: system
+        types: [shell]
+        args: ['-S', 'warning']
+
+  # Kubernetes/Helm validation
+  - repo: local
+    hooks:
+      - id: validate-k8s
+        name: Validate Kubernetes manifests
+        entry: bash -c 'find infra/k8s -name "*.yaml" -o -name "*.yml" | xargs -I {} kubeconform -summary -output json {}'
+        language: system
+        files: '^infra/k8s/.*\.(yaml|yml)$'
+        pass_filenames: false
+
+      - id: helm-lint
+        name: Lint Helm charts
+        entry: bash -c 'for chart in infra/helm/*/; do helm lint "$chart"; done'
+        language: system
+        files: '^infra/helm/.*'
+        pass_filenames: false
+
+  # Local Security checks
+  - repo: local
+    hooks:
+      - id: check-env-files
+        name: Prevent .env files
+        entry: |
+          bash -c 'if git diff --cached --name-only | grep -E "\.env$"; then echo "ERROR: .env files should not be committed" && exit 1; fi'
+        language: system
+        pass_filenames: false
+
+  # Commit message validation
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.27.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+exclude: |
+  (?x)^(
+    .*\.pb\.go|
+    .*\.pb\.gw\.go|
+    vendor/.*|
+    third_party/.*|
+    .*\.git/.*|
+    .*\.idea/.*
+  )$
+
+fail_fast: false

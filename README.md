@@ -3,7 +3,7 @@
 <h1>🐿️ Stashfi</h1>
 <p><strong>On-chain smart trading & automated strategies for everyone.</strong></p>
 
-<sub><em>Gather acorns today 🌰<br>Grow a forest tomorrow 🌳</em></sub>
+<sub><em>Compound over seasons 🌰<br>Grow the forest you intend 🌳</em></sub>
 
 <img alt="status" src="https://img.shields.io/badge/status-Build%20in%20Public-orange" />
 <img alt="license" src="https://img.shields.io/badge/license-No License-red" />
@@ -13,61 +13,69 @@
 
 ---
 
-## 🔎 Overview (TL;DR)
-Stashfi is an on-chain spot trading & strategy layer: limit / stop / stop-limit + DCA & value-averaging schedulers.
+## 🔎 Overview
+Stashfi is an on-chain spot trading and strategy layer designed to bring advanced, automated trading tools to DeFi. It begins with powerful order types and schedulers, and will evolve into a decentralized marketplace for algorithmic trading strategies.
 
-Once the core smart contracts are deployed, it expands into a performance-aligned marketplace where quants publish auditable strategies users can follow while funds remain in their own wallets or vaults.
+## 💡 Why Stashfi?
+Stashfi aims to bridge the gap between the feature-rich experience of centralized exchanges and the security of decentralized finance. We are building a trust-minimized environment with transparent, performance-based incentives for all participants.
 
-## 💡 Why It Should Exist
-Centralized exchanges = counterparty & rehypothecation risk.<br>
-Typical DEX UX = Uniswap V3 with no innovation.<br>
-Stashfi bridges the gap: advanced controls + transparent, performance‑based incentives
-
-## 🚀 Core Feature Set
-| Domain | Features |
-|--------|----------|
-| Orders | Limit • Stop • Stop‑Limit • Trailing |
-| Automation | DCA scheduler • Value averaging planner |
-| Strategies | Publish / subscribe marketplace • On‑chain performance tracking |
-| Fees | Performance‑aligned (e.g. high‑watermark / realized PnL based) |
-| Risk | Global + per‑position safeguards (roadmap) |
-| Education | Contextual inline tips • Lightweight explainer modals |
+## 🚀 Core Features
+- **Advanced Trading Tools**: Go beyond simple swaps with limit, stop, and trailing orders.
+- **Automated Investing**: Implement systematic strategies like dollar-cost averaging (DCA) and value averaging.
+- **Strategy Marketplace**: Discover, follow, and publish on-chain trading strategies.
+- **Aligned Incentives**: A performance-based fee structure ensures strategists succeed when you do.
 
 ## 🛡️ Security & Trust Principles
-1. Self‑custody first — minimize privileged roles.
-2. Verifiable execution — triggers & fills are provable.
-3. Economic alignment — bonded keepers & performance‑paid strategists.
-4. Progressive decentralization — orchestration migrates on‑chain / DAO‑governed over time.
+1. **Self-Custody First**: Minimize privileged roles and ensure users control their funds.
+2. **Verifiable Execution**: All trades and triggers are provable on-chain.
+3. **Economic Alignment**: Incentivize participants through bonding and performance-based fees.
+4. **Progressive Decentralization**: Gradually move orchestration and governance on-chain.
 
-## 🗺️ Indicative Roadmap
-Status | Item | Notes
--------|------|------
-[ ] | MVP order suite (limit / stop / stop‑limit / trailing) | Target: Q1 2026
-[ ] | DCA & value averaging | Batch scheduler & slippage guardrails
-[ ] | Strategy publishing & subscription | Public registry + opt‑in permissions
-[ ] | Performance fee module | High‑watermark + fallback safeguards
-[ ] | Risk dashboard & global stop | Unified exposure panel
-[ ] | Trailing stops & OCO | Conditional bundles
-[ ] | Cross‑venue routing / best execution | Aggregated liquidity paths
+## 🗺️ Roadmap
+Our development is planned in phases:
 
-> Roadmap is directional, subject to audit outcomes & community input.
+- **Phase 1: Core Trading Features**
+  - Implementation of advanced order types (limit, stop, trailing stops).
+  - Automated schedulers for DCA and value averaging strategies.
+
+- **Phase 2: Strategy Marketplace**
+  - Launch the platform for publishing and subscribing to trading strategies.
+  - Implement on-chain performance tracking and a transparent fee module.
+
+- **Phase 3: Advanced Functionality & Decentralization**
+  - Introduce sophisticated risk management tools and enhanced order types.
+  - Transition core protocol governance to a decentralized model.
+
+> This roadmap is directional and subject to change based on audit outcomes and community feedback.
 
 ## 🤝 Contributing
-We welcome: strategy modules, execution keepers, audits, educational content, UX refinements. Formal contribution guidelines arriving soon.
+We welcome contributions for strategy modules, execution keepers, audits, educational content, and UX refinements. Formal contribution guidelines will be published soon.
 
-Early contributions: open an Issue describing scope & design intent before submitting a PR.
+For early contributions, please open an Issue to describe the scope and design before submitting a pull request.
 
 ## 📜 License
-Source-available preview.<br>
-All rights reserved until audits complete and an approved license is published.
+This project is currently source-available. A formal open-source license will be adopted following the completion of security audits.
 
 ## 🌱 Get Involved
-- Strategy ideas → Issues
-- Security reviewers / auditors → Discussions
-- Brand & UX input → Share wireframes / figma links
-- Follow progress → Watch / Star repo
+- **Strategy Ideas**: Open an Issue.
+- **Security Reviews**: Start a Discussion.
+- **Brand & UX**: Share your designs and feedback.
+- **Follow Progress**: Watch or star the repository.
 
 ---
 
+## 🧪 Local Dev Quickstart (kind + Kong)
+Spin up a local Kubernetes cluster with the API Gateway and Kong routing in one command.
 
+- Prereqs: `mise install` (installs `kind`, `kubectl`, `helm`, etc.)
+- Start stack:
+  - `scripts/kind-up.sh --build-image --install-kong`
+- Verify via Kong proxy (NodePorts mapped by kind):
+  - `curl -s http://localhost:32080/health`
+  - `curl -s http://localhost:32080/api/v1/status`
+  - Open API docs at `http://localhost:32080/docs`
 
+Notes
+- The script prefers a local override at `infra/helm/kong/values.local.yaml`; if missing, it uses the bundled `infra/helm/kong/values.local.yaml.example` which enables NodePorts for local access.
+
+Tear down when done: `scripts/kind-down.sh`

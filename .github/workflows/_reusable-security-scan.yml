@@ -1,0 +1,160 @@
+name: Reusable Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'Primary language (go, javascript, python)'
+        type: string
+        default: 'go'
+      scan_path:
+        description: 'Path to scan'
+        type: string
+        default: '.'
+      run_gosec:
+        description: 'Run Gosec scanner (Go only)'
+        type: boolean
+        default: true
+      run_semgrep:
+        description: 'Run Semgrep scanner'
+        type: boolean
+        default: true
+      run_codeql:
+        description: 'Run CodeQL analysis'
+        type: boolean
+        default: true
+      run_trivy:
+        description: 'Run Trivy filesystem scan'
+        type: boolean
+        default: true
+      run_gitleaks:
+        description: 'Run Gitleaks secret scan'
+        type: boolean
+        default: true
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Run Gitleaks secret scan
+        if: inputs.run_gitleaks
+        id: gitleaks
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: detect --source ${{ inputs.scan_path }} --report-format sarif --report-path gitleaks.sarif --no-banner
+
+      - name: Upload Gitleaks results
+        if: ${{ inputs.run_gitleaks && !env.ACT && hashFiles('gitleaks.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+      - name: Run Gosec Security Scanner
+        if: inputs.run_gosec && inputs.language == 'go'
+        id: gosec
+        continue-on-error: true
+        uses: securego/gosec@v2.22.9
+        with:
+          args: -fmt sarif -out gosec.sarif -severity medium ${{ inputs.scan_path }}/...
+
+      - name: Upload Gosec results
+        if: ${{ inputs.run_gosec && inputs.language == 'go' && !env.ACT && hashFiles('gosec.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      - name: Run Semgrep
+        if: inputs.run_semgrep
+        id: semgrep
+        continue-on-error: true
+        uses: docker://semgrep/semgrep:1.137.0
+        with:
+          args: >-
+            scan --config auto --sarif --output semgrep.sarif
+            ${{ inputs.scan_path }}
+
+      - name: Upload Semgrep results
+        if: ${{ inputs.run_semgrep && !env.ACT && hashFiles('semgrep.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Run Trivy filesystem scan
+        if: inputs.run_trivy
+        id: trivy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.scan_path }}
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: vuln,misconfig,secret
+          # Trivy CLI version is pinned via the action input; omit custom config for now
+
+      - name: Upload Trivy results
+        if: ${{ inputs.run_trivy && !env.ACT && hashFiles('trivy-fs.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+      - name: Initialize CodeQL
+        # CodeQL requires GitHub API access, skip in act
+        if: ${{ inputs.run_codeql && !env.ACT }}
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ inputs.language }}
+          queries: security-and-quality
+
+      - name: Autobuild
+        # CodeQL requires GitHub API access, skip in act
+        if: ${{ inputs.run_codeql && !env.ACT }}
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        # CodeQL requires GitHub API access, skip in act
+        if: ${{ inputs.run_codeql && !env.ACT }}
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: codeql-${{ inputs.language }}
+
+      - name: Local scan summary
+        if: ${{ env.ACT }}
+        run: |
+          echo "📊 Security Scan Summary (Local Run)"
+          echo "================================="
+          echo ""
+          if [ -f gitleaks.sarif ]; then
+            echo "✅ Gitleaks scan completed"
+          fi
+          if [ -f gosec.sarif ]; then
+            echo "✅ Gosec scan completed"
+          fi
+          if [ -f semgrep.sarif ]; then
+            echo "✅ Semgrep scan completed"
+          fi
+          if [ -f trivy-fs.sarif ]; then
+            echo "✅ Trivy scan completed"
+          fi
+          echo ""
+          echo "📄 SARIF files created (not uploaded in local mode):"
+          ls -la *.sarif 2>/dev/null || echo "No SARIF files found"

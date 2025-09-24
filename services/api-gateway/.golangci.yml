@@ -1,0 +1,25 @@
+# Minimal, compatible config focused on correctness and formatting
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - revive
+    - errcheck
+    - ineffassign
+    - unused
+    - unparam
+    - gocritic
+    - errorlint
+    - copyloopvar
+    - durationcheck
+    - bodyclose
+    - misspell
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
