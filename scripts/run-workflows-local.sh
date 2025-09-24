@@ -45,8 +45,12 @@ if [[ -z "$ARCH" ]]; then
   esac
 fi
 
+# Resolve CI toolbox registry (defaults to repo owner or stashfi)
+DEFAULT_TOOLBOX_REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox"
+CI_TOOLBOX_REGISTRY="${CI_TOOLBOX_REGISTRY:-$DEFAULT_TOOLBOX_REGISTRY}"
+
 # Always use our CI toolbox from GHCR for consistency with GitHub Actions
-RUNNER_IMAGE="ghcr.io/bboissen/ci-toolbox:24.04"
+RUNNER_IMAGE="${CI_TOOLBOX_REGISTRY}:24.04"
 
 # Check if we're logged in to GHCR by trying to pull
 echo "📦 Checking CI toolbox availability..."

@@ -44,10 +44,14 @@ check_common_issues() {
     local filename
     filename=$(basename "$file")
 
+    local default_registry="ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox"
+
     # Check for CI toolbox image references
-    if grep -q "ghcr.io/bboissen/ci-toolbox" "$file"; then
-        echo "⚠️  $filename uses CI toolbox image - ensure it's built and pushed"
-    fi
+    while IFS= read -r registry_match; do
+        if [[ "$registry_match" != "$default_registry"* ]]; then
+            echo "⚠️  $filename references CI toolbox image '$registry_match' (expected default: $default_registry)"
+        fi
+    done < <(grep -oE 'ghcr\.io/[[:alnum:]._-]+/ci-toolbox(:[[:alnum:]._+-]+)?' "$file" | sort -u)
 
     # Check for non-existent service paths
     if grep -q "services/" "$file"; then

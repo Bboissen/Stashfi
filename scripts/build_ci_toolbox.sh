@@ -5,12 +5,13 @@ set -euo pipefail
 #  scripts/build_ci_toolbox.sh [--push] [--tag <tag>] [--registry ghcr.io/<owner>/ci-toolbox] [--platform <platforms>]
 # Defaults:
 #  tag: 24.04
-#  registry: ghcr.io/bboissen/ci-toolbox
+#  registry: ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox (override with CI_TOOLBOX_REGISTRY)
 #  platform: linux/amd64,linux/arm64 (multi-arch by default)
 
 PUSH=false
 TAG=24.04
-REGISTRY="ghcr.io/bboissen/ci-toolbox"
+DEFAULT_REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox"
+REGISTRY="${CI_TOOLBOX_REGISTRY:-$DEFAULT_REGISTRY}"
 PLATFORMS="linux/amd64,linux/arm64"
 
 while [[ $# -gt 0 ]]; do

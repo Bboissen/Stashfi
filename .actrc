@@ -10,9 +10,9 @@
 
 # Map GitHub runner labels to our CI toolbox image on GHCR
 # This ensures consistency between GitHub Actions and local testing
-# Build and push: ./scripts/build_ci_toolbox.sh --push --registry ghcr.io/bboissen/ci-toolbox
--P ubuntu-latest=ghcr.io/bboissen/ci-toolbox:24.04
--P ubuntu-24.04=ghcr.io/bboissen/ci-toolbox:24.04
+# Build and push: CI_TOOLBOX_REGISTRY=ghcr.io/<owner>/ci-toolbox ./scripts/build_ci_toolbox.sh --push
+-P ubuntu-latest=ghcr.io/stashfi/ci-toolbox:24.04
+-P ubuntu-24.04=ghcr.io/stashfi/ci-toolbox:24.04
 
 # Environment variables needed for GitHub Actions compatibility
 --env RUNNER_TOOL_CACHE=/opt/hostedtoolcache
