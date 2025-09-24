@@ -3,7 +3,7 @@ name: API Integration Tests
 on:
   workflow_dispatch:
   push:
-    branches: [ main, "feat/**" ]
+    branches: [ main ]
     paths:
       - 'services/api-gateway/**'
       - 'infra/helm/kong/**'
