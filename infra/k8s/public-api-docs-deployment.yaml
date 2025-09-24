@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: scalar
-          image: ghcr.io/scalar/scalar:latest
+          image: ghcr.io/stashfi/swagger-ui:5.17.14
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -33,7 +33,7 @@ spec:
                 - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: SCALAR_SPEC_URL
+            - name: URL
               value: "http://api-gateway-service.stashfi.svc.cluster.local:8080/openapi/public.yaml"
           ports:
             - name: http
