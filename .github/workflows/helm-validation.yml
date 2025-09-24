@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, "feat/**", "fix/**", "hotfix/**", "refactor/**", "chore/**" ]
+    branches: [ main ]
     paths:
       - 'infra/helm/**'
       - '.github/workflows/helm-validation.yml'

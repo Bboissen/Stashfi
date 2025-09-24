@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, "feat/**" ]
+    branches: [ main ]
     paths:
       - 'infra/containers/ci-toolbox/**'
       - '.github/workflows/ci-toolbox-build.yml'

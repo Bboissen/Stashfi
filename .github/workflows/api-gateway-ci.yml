@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, "feat/**", "fix/**" ]
+    branches: [ main ]
     paths:
       - 'services/api-gateway/**'
       - '.github/workflows/api-gateway-ci.yml'
@@ -24,24 +24,9 @@ permissions:
   security-events: write
 
 jobs:
-  dedupe:
-    name: Skip duplicate runs
-    runs-on: ubuntu-24.04
-    outputs:
-      should_skip: ${{ steps.skip.outputs.should_skip }}
-    steps:
-      - id: skip
-        uses: fkirc/skip-duplicate-actions@v5.3.1
-        with:
-          concurrent_skipping: 'same_content_newer'
-          cancel_others: 'true'
-          skip_after_successful_duplicate: 'true'
-          do_not_skip: '["pull_request"]'
   # Go testing and linting
   test:
     name: Test & Lint
-    needs: [dedupe]
-    if: needs.dedupe.outputs.should_skip != 'true'
     uses: ./.github/workflows/_reusable-go-test.yml
     with:
       service_path: ./services/api-gateway
@@ -51,8 +36,6 @@ jobs:
   # Security scanning
   security:
     name: Security Scan
-    needs: [dedupe]
-    if: needs.dedupe.outputs.should_skip != 'true'
     uses: ./.github/workflows/_reusable-security-scan.yml
     with:
       language: go
@@ -61,8 +44,7 @@ jobs:
   # Docker build
   docker:
     name: Build Docker Image
-    needs: [test, dedupe]
-    if: needs.dedupe.outputs.should_skip != 'true'
+    needs: [test]
     uses: ./.github/workflows/_reusable-docker-build.yml
     with:
       image_name: api-gateway
