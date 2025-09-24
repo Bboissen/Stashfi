@@ -32,6 +32,8 @@ spec:
               drop:
                 - ALL
             readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: URL
               value: "http://api-gateway-service.stashfi.svc.cluster.local:8080/openapi/public.yaml"
