@@ -52,3 +52,51 @@ jobs:
       image_name: api-gateway
       dockerfile_path: ./services/api-gateway
       push: ${{ github.ref == 'refs/heads/main' }}
+
+  pin-digest:
+    name: Pin digest to manifest and open PR
+    needs: [docker]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Prepare variables
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIGEST="${{ needs.docker.outputs.image_digest }}"
+          if [[ -z "$DIGEST" ]]; then
+            echo "Image digest is empty" >&2; exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Update manifest with digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="infra/k8s/api-gateway-deployment.yaml"
+          sed -i.bak -E "s|image: ghcr.io/stashfi/api-gateway:.*$|image: ghcr.io/stashfi/api-gateway@${{ steps.vars.outputs.digest }}|" "$FILE"
+          rm -f "${FILE}.bak"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(api-gateway): pin image digest to ${{ steps.vars.outputs.digest }}"
+          title: "chore(api-gateway): pin image digest to ${{ steps.vars.outputs.digest }}"
+          body: |
+            Pin Kubernetes manifest image to immutable digest for api-gateway.
+
+            - Image: ghcr.io/stashfi/api-gateway@${{ steps.vars.outputs.digest }}
+            - Source: ${{ github.workflow }} run ${{ github.run_id }}
+          branch: "chore/pin-api-gateway-digest-${{ steps.vars.outputs.short_sha }}"
+          delete-branch: true
+          add-paths: |
+            infra/k8s/api-gateway-deployment.yaml
