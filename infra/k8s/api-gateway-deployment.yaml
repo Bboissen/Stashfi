@@ -44,6 +44,9 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
         livenessProbe:
           httpGet:
             path: /health
