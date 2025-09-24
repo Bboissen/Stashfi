@@ -80,25 +80,25 @@ jobs:
           echo "Checking Kong configuration..."
 
           # Verify DB-less mode or database config
-          if yq eval '.env.database' values.yaml | grep -q "off"; then
+          if yq eval '.kong.env.database' values.yaml | grep -q "off"; then
             echo "✅ DB-less mode configured"
             # Check for declarative config in DB-less mode
-            if ! yq eval '.env.declarative_config' values.yaml > /dev/null; then
-              echo "⚠️  Warning: DB-less mode but no declarative_config set"
+            if ! yq eval '.kong.dblessConfig.config' values.yaml > /dev/null; then
+              echo "⚠️  Warning: DB-less mode but no dblessConfig set"
             fi
           else
             echo "✅ Database mode configured"
           fi
 
           # Check admin API configuration
-          if yq eval '.admin.enabled' values.yaml | grep -q "true"; then
+          if yq eval '.kong.admin.enabled' values.yaml | grep -q "true"; then
             echo "✅ Admin API enabled"
           else
             echo "⚠️  Warning: Admin API disabled - management will be limited"
           fi
 
           # Check proxy configuration
-          if yq eval '.proxy.enabled' values.yaml | grep -q "true"; then
+          if yq eval '.kong.proxy.enabled' values.yaml | grep -q "true"; then
             echo "✅ Proxy enabled"
           else
             echo "❌ Error: Proxy must be enabled"
@@ -106,10 +106,10 @@ jobs:
           fi
 
           # Validate ingress configuration if enabled
-          if yq eval '.proxy.ingress.enabled' values.yaml | grep -q "true"; then
+          if yq eval '.kong.proxy.ingress.enabled' values.yaml | grep -q "true"; then
             echo "✅ Ingress configured"
             # Check for TLS configuration
-            if yq eval '.proxy.ingress.tls' values.yaml | grep -q "null"; then
+            if yq eval '.kong.proxy.ingress.tls' values.yaml | grep -q "null"; then
               echo "⚠️  Warning: Ingress enabled but no TLS configuration"
             fi
           fi
@@ -141,12 +141,12 @@ jobs:
           cd infra/helm/kong
 
           # Check if any Kong plugins are configured
-          if yq eval '.plugins' values.yaml 2>/dev/null | grep -v "null"; then
+          if yq eval '.kong.plugins' values.yaml 2>/dev/null | grep -v "null"; then
             echo "✅ Kong plugins configured"
 
             # List configured plugins
             echo "Configured plugins:"
-            yq eval '.plugins' values.yaml || true
+            yq eval '.kong.plugins' values.yaml || true
           else
             echo "ℹ️  No Kong plugins configured in values.yaml"
           fi
@@ -158,14 +158,14 @@ jobs:
           echo "Running security checks..."
 
           # Check for security context
-          if yq eval '.securityContext' values.yaml | grep -v "null"; then
+          if yq eval '.kong.securityContext' values.yaml | grep -v "null"; then
             echo "✅ Security context configured"
           else
             echo "⚠️  Warning: Consider adding securityContext for better security"
           fi
 
           # Check for network policies
-          if yq eval '.networkPolicy.enabled' values.yaml | grep -q "true"; then
+          if yq eval '.kong.networkPolicy.enabled' values.yaml | grep -q "true"; then
             echo "✅ Network policies enabled"
           else
             echo "ℹ️  Network policies not enabled - consider for production"
