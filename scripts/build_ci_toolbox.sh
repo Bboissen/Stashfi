@@ -5,12 +5,16 @@ set -euo pipefail
 #  scripts/build_ci_toolbox.sh [--push] [--tag <tag>] [--registry ghcr.io/<owner>/ci-toolbox] [--platform <platforms>]
 # Defaults:
 #  tag: 24.04
-#  registry: ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox (override with CI_TOOLBOX_REGISTRY)
+#  registry: ghcr.io/<owner>/ci-toolbox (override with CI_TOOLBOX_REGISTRY)
+#  Note: <owner> is lowercased from $GITHUB_REPOSITORY_OWNER when present.
 #  platform: linux/amd64,linux/arm64 (multi-arch by default)
 
 PUSH=false
 TAG=24.04
-DEFAULT_REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox"
+# Ensure owner is lowercase for GHCR
+_owner="${GITHUB_REPOSITORY_OWNER:-bboissen}"
+_owner_lc="$(printf '%s' "${_owner}" | tr '[:upper:]' '[:lower:]')"
+DEFAULT_REGISTRY="ghcr.io/${_owner_lc}/ci-toolbox"
 REGISTRY="${CI_TOOLBOX_REGISTRY:-$DEFAULT_REGISTRY}"
 PLATFORMS="linux/amd64,linux/arm64"
 

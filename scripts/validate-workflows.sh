@@ -44,7 +44,11 @@ check_common_issues() {
     local filename
     filename=$(basename "$file")
 
-    local default_registry="ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox"
+    # Ensure owner is lowercase for GHCR
+    local _owner="${GITHUB_REPOSITORY_OWNER:-bboissen}"
+    local _owner_lc
+    _owner_lc="$(printf '%s' "${_owner}" | tr '[:upper:]' '[:lower:]')"
+    local default_registry="ghcr.io/${_owner_lc}/ci-toolbox"
 
     # Check for CI toolbox image references
     while IFS= read -r registry_match; do

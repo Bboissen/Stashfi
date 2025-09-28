@@ -45,8 +45,10 @@ if [[ -z "$ARCH" ]]; then
   esac
 fi
 
-# Resolve CI toolbox registry (defaults to repo owner or stashfi)
-DEFAULT_TOOLBOX_REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER:-bboissen}/ci-toolbox"
+# Resolve CI toolbox registry (defaults to repo owner lowercase)
+_owner="${GITHUB_REPOSITORY_OWNER:-bboissen}"
+_owner_lc="$(printf '%s' "${_owner}" | tr '[:upper:]' '[:lower:]')"
+DEFAULT_TOOLBOX_REGISTRY="ghcr.io/${_owner_lc}/ci-toolbox"
 CI_TOOLBOX_REGISTRY="${CI_TOOLBOX_REGISTRY:-$DEFAULT_TOOLBOX_REGISTRY}"
 
 # Always use our CI toolbox from GHCR for consistency with GitHub Actions
