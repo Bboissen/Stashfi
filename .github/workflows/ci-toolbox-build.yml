@@ -36,6 +36,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Compute lowercase owner
+        id: owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU (for multi-arch)
         uses: docker/setup-qemu-action@v3
         with:
@@ -54,14 +58,14 @@ jobs:
           echo "cache_from<<EOF" >> "$GITHUB_OUTPUT"
           echo "type=gha,scope=ci-toolbox" >> "$GITHUB_OUTPUT"
           if [ "$SHOULD_PUSH" = "true" ]; then
-            echo "type=registry,ref=ghcr.io/${{ github.repository_owner }}/ci-toolbox:buildcache" >> "$GITHUB_OUTPUT"
+            echo "type=registry,ref=ghcr.io/${{ steps.owner.outputs.owner }}/ci-toolbox:buildcache" >> "$GITHUB_OUTPUT"
           fi
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           echo "cache_to<<EOF" >> "$GITHUB_OUTPUT"
           echo "type=gha,mode=max,scope=ci-toolbox" >> "$GITHUB_OUTPUT"
           if [ "$SHOULD_PUSH" = "true" ]; then
-            echo "type=registry,ref=ghcr.io/${{ github.repository_owner }}/ci-toolbox:buildcache,mode=max,oci-mediatypes=true" >> "$GITHUB_OUTPUT"
+            echo "type=registry,ref=ghcr.io/${{ steps.owner.outputs.owner }}/ci-toolbox:buildcache,mode=max,oci-mediatypes=true" >> "$GITHUB_OUTPUT"
           fi
           echo "EOF" >> "$GITHUB_OUTPUT"
 
@@ -77,7 +81,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/ci-toolbox
+          images: ghcr.io/${{ steps.owner.outputs.owner }}/ci-toolbox
           tags: |
             type=raw,value=24.04
             type=raw,value=latest,enable={{is_default_branch}}

@@ -51,7 +51,7 @@ jobs:
     with:
       image_name: api-gateway
       dockerfile_path: ./services/api-gateway
-      push: ${{ github.ref == 'refs/heads/main' }}
+      push: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
 
   pin-digest:
     name: Pin digest to manifest and open PR

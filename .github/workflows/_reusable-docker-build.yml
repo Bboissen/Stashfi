@@ -127,7 +127,7 @@ jobs:
           file: ${{ inputs.dockerfile_path }}/Dockerfile
           platforms: ${{ (steps.cache.outputs.should_push == 'true') && inputs.platforms || 'linux/amd64' }}
           push: ${{ steps.cache.outputs.should_push == 'true' }}
-          load: ${{ !inputs.push || env.ACT }}
+          load: ${{ (!inputs.push || env.ACT) && 'true' || 'false' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: ${{ steps.cache.outputs.cache_from }}
@@ -136,8 +136,8 @@ jobs:
             BUILDKIT_INLINE_CACHE=1
           # Docker exporter (load: true) does not support attestations (sbom/provenance).
           # Enable them only when pushing to a registry (i.e., using registry exporter).
-          sbom: ${{ inputs.scan_image && inputs.push && !env.ACT }}
-          provenance: ${{ inputs.scan_image && inputs.push && !env.ACT }}
+          sbom: ${{ inputs.scan_image && inputs.push && (env.ACT == '') }}
+          provenance: ${{ inputs.scan_image && inputs.push && (env.ACT == '') }}
 
       - name: Run Trivy vulnerability scan
         if: inputs.scan_image && inputs.push
